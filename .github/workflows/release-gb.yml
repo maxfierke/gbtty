@@ -1,0 +1,30 @@
+name: Release (GB)
+
+on:
+  release:
+    types:
+      - created
+
+env:
+  GBDK_VERSION: "4.4.0"
+
+jobs:
+  make-on-release:
+    runs-on: ubuntu-latest
+    name: Build ROM
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+      - name: Install GBDK
+        run: |
+          curl -sSL "https://github.com/gbdk-2020/gbdk-2020/releases/download/$GBDK_VERSION/gbdk-linux64.tar.gz" > gbdk-linux64.tar.gz
+          tar -xf gbdk-linux64.tar.gz /usr/lib/
+          echo 'export GBDK_HOME=/usr/lib/gbdk' >> $GITHUB_ENV
+      - name: Build ROM
+        run: |
+          cd gb && make
+      - name: Attach ROM to Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: gb/obj/gbtty.gb
