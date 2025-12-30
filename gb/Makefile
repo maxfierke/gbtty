@@ -63,4 +63,4 @@ clean:
 	rm -f  $(OBJDIR)/*.*
 
 dev:
-	make && (killall SameBoy || true) && open $(PROJECTNAME).gb
+	make && (killall SameBoy || true) && open $(OBJDIR)/$(PROJECTNAME).gb

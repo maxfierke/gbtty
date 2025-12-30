@@ -7,12 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "border.h"
-#include "gt_invert.h"
-
-#define BORDER_OFFSET 0xB0
-#define GT_INVERT_OFFSET 0xBD
-
 // Keys
 uint8_t previousKeys = 0;
 uint8_t keys = 0;
@@ -29,10 +23,14 @@ uint8_t cgb = 0;
 uint8_t themeIndex = 0;
 uint8_t triggerMessageClear = 0;
 
+uint8_t term_x = 1;
+uint8_t term_y = 2;
+uint8_t term_started = 0;
+
 char textBuffer[20];
 
 // Drawing & Themes
-font_t ibmFont, minFont, minFontInvert;
+font_t titleFont, consoleFont, minFontInvert;
 #define RGB_GOLD 0x331C
 #define RGB_DARK_PURPLE 0x2405
 #define RGB_DARK_GREEN 0x0923
@@ -113,14 +111,14 @@ const uint8_t paletteSteps[] = {1, 4, 7, 12, 16, 20, 27, 31};
 void setupFonts(void) {
   font_init();
   font_color(0, 3);
-  minFont = font_load(font_min);
+  consoleFont = font_load(font_ibm);
 
   if (cgb) {
     font_color(2, 3);
   } else {
     font_color(0, 3);
   }
-  ibmFont = font_load(font_ibm);
+  titleFont = font_load(font_ibm);
 
   if (cgb) {
     font_color(1, 2);
@@ -128,13 +126,6 @@ void setupFonts(void) {
     font_color(3, 0);
   }
   minFontInvert = font_load(font_min);
-
-  set_bkg_data(GT_INVERT_OFFSET, gt_invert_TILE_COUNT, gt_invert_tiles);
-}
-
-void drawBorder(void) {
-  set_bkg_data(BORDER_OFFSET, border_TILE_COUNT, border_tiles);
-  set_bkg_based_tiles(0, 0, 20u, 18u, border_map, BORDER_OFFSET);
 }
 
 void printAtWith(char str[], uint8_t x, uint8_t y, font_t font) {
@@ -143,28 +134,35 @@ void printAtWith(char str[], uint8_t x, uint8_t y, font_t font) {
   printf(str);
 }
 
+void printCharAt(unsigned ch, uint8_t x, uint8_t y, font_t font) {
+  font_set(font);
+  gotoxy(x, y);
+  setchar(ch);
+}
+
 font_t pressedFont(uint8_t key) {
   if (KEY_PRESSED(key)) {
     return minFontInvert;
   } else {
-    return minFont;
+    return consoleFont;
   }
 }
 
-void clearMessageArea(void) {
-  printAtWith("                  ", 1, 13, minFont);
-  printAtWith("                  ", 1, 14, minFont);
+void clearScreen(void) {
+  cls();
+  term_x = 1;
+  term_y = 2;
 }
 
 void printModel(void) {
   if (_is_GBA) {
-    printAtWith(" A", 17, 16, minFont);
+    printAtWith(" A", 17, 16, consoleFont);
   } else if (cgb) {
-    printAtWith(" C", 17, 16, minFont);
+    printAtWith(" C", 17, 16, consoleFont);
   } else if (_cpu == MGB_TYPE) {
-    printAtWith(" M", 17, 16, minFont);
+    printAtWith(" M", 17, 16, consoleFont);
   } else {
-    printAtWith(" D", 17, 16, minFont);
+    printAtWith(" D", 17, 16, consoleFont);
   }
 }
 
@@ -172,18 +170,39 @@ void setPalette(palette_color_t* pal) {
   if (cgb) set_bkg_palette(0, 1, pal);
 }
 
-void whiteScreen(void) {
-  font_set(ibmFont);
-  setPalette(paletteWhiteHC);
-  for (uint8_t i = 0; i < 18; i++) {
-    gotoxy(0, i);
-    printf("                    ");
+void advanceTermLine(void) {
+  term_x = 1;
+  term_y++;
+  if (term_y >= 16) {
+    term_y = 2;
   }
 }
 
-void testLinkClient(void) {
-  if (SB_REG != 0xFF) {  // we've received data, send it right back
-    SC_REG = 0x80;       // transfer on, internal clock
+void processIncomingBytes(void) {
+  if (_io_status == IO_IDLE) {
+    unsigned char curChar = (unsigned char)_io_in;
+
+    if (curChar == '\0' || curChar == (unsigned char)0xFF) {
+      // Skip NULL and dirty reads
+      return;
+    }
+    if (curChar == (unsigned char)0x7F) {  // Handle backspace
+      if (term_x > 1) {
+        printCharAt(' ', term_x, term_y, consoleFont);  // Blank out cursor
+        term_x--;
+      }
+      return;
+    }
+
+    // Skip unprintable characters
+    if (curChar < ' ' || curChar > (unsigned char)0x7F) return;
+
+    if (curChar == '\n') {
+      advanceTermLine();
+    }
+
+    printCharAt(curChar, term_x, term_y, consoleFont);
+    term_x++;
   }
 }
 
@@ -198,24 +217,43 @@ void drawLink(void) {
 
 // Main Loop
 void draw(void) {
-  printAtWith("GBTTY", 1, 1, ibmFont);
+  printAtWith("GBTTY", 1, 1, titleFont);
+
+  if (!term_started) {
+    printAtWith("START to begin", 3, 12, minFontInvert);
+  } else {
+    if (term_x >= 19) {
+      advanceTermLine();
+    }
+    printCharAt(' ', term_x, term_y, minFontInvert);
+  }
 
   if (triggerMessageClear) {
-    clearMessageArea();
+    clearScreen();
     triggerMessageClear = 0;
-  } else {
-    printAtWith("Waiting for data...", 1, 13, ibmFont);
   }
 
   drawLink();
 }
 
 void update(void) {
-  if (KEY_PRESSED(J_SELECT) && KEY_PRESSED(J_START)) {
+  if (!term_started) {
+    if (KEY_RELEASED(J_START)) {
+      term_started = 1;
+      printAtWith("               ", 3, 12, titleFont);
+    }
+
+    return;
+  }
+
+  if (KEY_RELEASED(J_SELECT) && KEY_RELEASED(J_START)) {
     triggerMessageClear = 1;
   }
 
-  testLinkClient();
+  processIncomingBytes();
+  if (_io_status == IO_IDLE) {
+    receive_byte();
+  }
 }
 
 void main(void) {
@@ -233,10 +271,6 @@ void main(void) {
   setPalette(palettes[themeIndex]);
 
   setupFonts();
-  drawBorder();
-
-  SB_REG = 0xFF;
-  SC_REG = 0x80;
 
   DISPLAY_ON;
 
@@ -246,6 +280,6 @@ void main(void) {
     update();
     draw();
 
-    wait_vbl_done();
+    vsync();
   }
 }
