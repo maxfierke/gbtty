@@ -19,7 +19,6 @@ uint8_t keys = 0;
 #define NO_KEYS_PRESSED() keys == 0
 
 // Globals
-uint8_t cgb = 0;
 uint8_t themeIndex = 0;
 uint8_t triggerMessageClear = 0;
 
@@ -104,23 +103,19 @@ palette_color_t* palettes[] = {
     paletteDusk,       paletteSunrise,    paletteWhiteHC,   paletteBlackHC};
 const uint8_t themeCount = sizeof palettes / sizeof palettes[0];
 
-palette_color_t* bgColorTestPalettes[24];
-palette_color_t* spriteColorTestPalettes[16];
-const uint8_t paletteSteps[] = {1, 4, 7, 12, 16, 20, 27, 31};
-
 void setupFonts(void) {
   font_init();
   font_color(0, 3);
   consoleFont = font_load(font_ibm);
 
-  if (cgb) {
+  if (DEVICE_SUPPORTS_COLOR) {
     font_color(2, 3);
   } else {
     font_color(0, 3);
   }
   titleFont = font_load(font_ibm);
 
-  if (cgb) {
+  if (DEVICE_SUPPORTS_COLOR) {
     font_color(1, 2);
   } else {
     font_color(3, 0);
@@ -157,7 +152,7 @@ void clearScreen(void) {
 void printModel(void) {
   if (_is_GBA) {
     printAtWith(" A", 17, 16, consoleFont);
-  } else if (cgb) {
+  } else if (_cpu == CGB_TYPE) {
     printAtWith(" C", 17, 16, consoleFont);
   } else if (_cpu == MGB_TYPE) {
     printAtWith(" M", 17, 16, consoleFont);
@@ -167,7 +162,7 @@ void printModel(void) {
 }
 
 void setPalette(palette_color_t* pal) {
-  if (cgb) set_bkg_palette(0, 1, pal);
+  if (DEVICE_SUPPORTS_COLOR) set_bkg_palette(0, 1, pal);
 }
 
 void advanceTermLine(void) {
@@ -178,7 +173,7 @@ void advanceTermLine(void) {
   }
 }
 
-void processIncomingBytes(void) {
+void handleNextLinkByte(void) {
   if (_io_status == IO_IDLE) {
     unsigned char curChar = (unsigned char)_io_in;
 
@@ -206,10 +201,31 @@ void processIncomingBytes(void) {
   }
 }
 
-void drawLink(void) {
+void drawLinkState(void) {
   if (SB_REG == 0xFF || !SB_REG) {
     printModel();
   } else {
+    unsigned char* status = "";
+    uint16_t status_font = minFontInvert;
+    switch (_io_status) {
+      case IO_IDLE:  // When we're writing, this is true, so it appears as
+                     // though we're actually receiving
+        status = "R";
+        break;
+      case IO_SENDING:
+        status = "S";
+        break;
+      case IO_RECEIVING:  // This is set while _waiting_/ready for new data, so
+                          // it appears as idle
+        status = " ";
+        status_font = titleFont;
+        break;
+      case IO_ERROR:
+        status = "E";
+        break;
+    }
+    sprintf(textBuffer, "%s", (unsigned char*)status);
+    printAtWith(textBuffer, 1, 16, status_font);
     sprintf(textBuffer, "%hx", (uint8_t)SB_REG);
     printAtWith(textBuffer, 17, 16, minFontInvert);
   }
@@ -233,7 +249,7 @@ void draw(void) {
     triggerMessageClear = 0;
   }
 
-  drawLink();
+  drawLinkState();
 }
 
 void update(void) {
@@ -250,7 +266,7 @@ void update(void) {
     triggerMessageClear = 1;
   }
 
-  processIncomingBytes();
+  handleNextLinkByte();
   if (_io_status == IO_IDLE) {
     receive_byte();
   }
@@ -264,13 +280,14 @@ void main(void) {
   SHOW_SPRITES;
   SPRITES_8x8;
 
-  if (_cpu == CGB_TYPE) {
-    cgb = 1;
-  }
-
   setPalette(palettes[themeIndex]);
 
   setupFonts();
+
+  // Sentinel value for unitialized
+  SB_REG = 0xFF;
+  // Set to external clock, we're not drivin' this thing
+  SC_REG = SIOF_CLOCK_EXT;
 
   DISPLAY_ON;
 
