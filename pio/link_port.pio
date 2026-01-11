@@ -12,7 +12,7 @@ loop:
         set pins, 1     ; Set rising edge on SCK
         in pins, 1 [7]  ; Read a bit from consumer
     jmp x-- loop
-    nop [8]             ; Give consumer time to receive byte
+    nop [10]             ; Give consumer time to receive byte
     set pindirs, 0      ; Disable output for SCK
     push noblock        ; Write response byte from consumer to FIFO
 .wrap

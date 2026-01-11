@@ -9,7 +9,7 @@
 use bsp::entry;
 use rp2040_panic_usb_boot as _;
 
-use shared_mem_queue::byte_queue::ByteQueue;
+use heapless::spsc::{Producer, Queue};
 use usb_device::{
     bus::UsbBusAllocator,
     device::{StringDescriptors, UsbDevice, UsbDeviceBuilder, UsbVidPid},
@@ -45,7 +45,7 @@ static mut USB_BUS: Option<UsbBusAllocator<bsp::hal::usb::UsbBus>> = None;
 static mut USB_SERIAL: Option<SerialPort<bsp::hal::usb::UsbBus>> = None;
 
 /// Link port TX queue
-static mut LINK_PORT_BUFFER_QUEUE: Option<ByteQueue> = None;
+static mut LINK_PORT_BUFFER_WRITER: Option<Producer<'_, u8>> = None;
 
 #[entry]
 fn main() -> ! {
@@ -127,52 +127,47 @@ fn main() -> ! {
         USB_DEVICE = Some(usb_dev);
     }
 
-    let mut link_port_buffer = [0u8; 4096];
-    const LEN_U32_TO_U8_SCALER: usize = core::mem::size_of::<u32>();
+    let mut link_port_queue_reader = {
+        let (p, c) = {
+            static mut LINK_PORT_BUFFER_QUEUE: Queue<u8, 64> = Queue::new();
+            // SAFETY: `LINK_PORT_BUFFER_QUEUE` is only accessible in this scope
+            // and `main` is only called once.
+            #[allow(static_mut_refs)]
+            unsafe {
+                LINK_PORT_BUFFER_QUEUE.split()
+            }
+        };
 
-    unsafe {
-        // SAFETY: This is safe as interrupts haven't been started yet and we
-        // haven't yet attached a reader
-        let writer = ByteQueue::create(
-            link_port_buffer.as_mut_ptr() as *mut u8,
-            link_port_buffer.len() * LEN_U32_TO_U8_SCALER,
-        );
-        LINK_PORT_BUFFER_QUEUE = Some(writer)
-    }
+        unsafe {
+            LINK_PORT_BUFFER_WRITER = Some(p);
+        };
+
+        c
+    };
 
     // Enable the USB interrupt
     unsafe {
         pac::NVIC::unmask(Interrupt::USBCTRL_IRQ);
     };
 
-    let mut link_port_queue_reader = unsafe {
-        // SAFETY: This is safe because the underlying buffer and queue have
-        // been created already.
-        ByteQueue::attach(
-            link_port_buffer.as_mut_ptr() as *mut u8,
-            link_port_buffer.len() * LEN_U32_TO_U8_SCALER,
-        )
-    };
-
     let mut active_link_port = port.enable();
 
     loop {
-        let mut wbuf = [0u8; 1];
-        match link_port_queue_reader.peek_at_most(&mut wbuf, 1) {
-            0 => {
+        match link_port_queue_reader.peek() {
+            None => {
+                let _ = active_link_port.flush();
                 cortex_m::asm::wfi();
             }
-            rlen => {
-                match active_link_port.write_all(&wbuf[..rlen]) {
+            Some(ch) => {
+                let buf: [u8; 1] = [*ch];
+                match active_link_port.write(&buf[..1]) {
                     Ok(_) => {
-                        let _ = link_port_queue_reader.skip_at_most(rlen);
+                        let _ = link_port_queue_reader.dequeue();
                     }
                     Err(_err) => {
                         // TODO: Log something?
                     }
                 }
-
-                let _ = active_link_port.flush();
             }
         }
 
@@ -193,7 +188,7 @@ fn USBCTRL_IRQ() {
     // during an interrupt and are always set before enabling this interrupt
     let usb_dev = unsafe { USB_DEVICE.as_mut().unwrap() };
     let serial = unsafe { USB_SERIAL.as_mut().unwrap() };
-    let link_port_queue = unsafe { LINK_PORT_BUFFER_QUEUE.as_mut().unwrap() };
+    let link_port_queue = unsafe { LINK_PORT_BUFFER_WRITER.as_mut().unwrap() };
 
     // Poll the USB driver for new serial data
     if usb_dev.poll(&mut [serial]) {
@@ -208,12 +203,12 @@ fn USBCTRL_IRQ() {
             Ok(count) => {
                 let mut wr_ptr = &buf[..count];
                 while !wr_ptr.is_empty() {
-                    match link_port_queue.write_at_most(wr_ptr) {
-                        0 => {
+                    match link_port_queue.enqueue(wr_ptr[0]) {
+                        Err(_) => {
                             let _ =
                                 serial.write(b"\nWARNING: Unable to write to link port queue\n");
                         }
-                        _ => {
+                        Ok(_) => {
                             // Do nothing. It worked, yay!
                         }
                     }
