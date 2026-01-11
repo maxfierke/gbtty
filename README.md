@@ -1,7 +1,7 @@
 # gbtty
 
-gbtty is a Game Boy (Color) hardware and software project to turn the Game Boy
-into an ANSI-compatible terminal.
+gbtty (pronounced: _gib-bit-EE_ / "gibbity") is a Game Boy (Color) hardware and
+software project to turn the Game Boy into an ANSI-compatible terminal.
 
 # Goals
 

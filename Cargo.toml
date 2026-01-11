@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "gbtty"
+name = "gbtty-rp-firmware"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
@@ -8,20 +8,21 @@ license = "MIT OR Apache-2.0"
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
 embedded-hal = { version = "1.0.0" }
+heapless = "0.9.2"
+pio = "0.2"
+pio-proc = "0.2"
+shared-mem-queue = "0.4.0"
+usb-device = "0.3.1"
+usbd-serial = "0.2.1"
 
-defmt = "1"
-defmt-rtt = "1"
-panic-probe = { version = "1", features = ["print-defmt"] }
+rp2040-panic-usb-boot = "0.6"
+rp-pico = { version = "0.9", optional = true }
+waveshare-rp2040-zero = { version = "0.8.0", optional = true, features = ["rp2040-e5"] }
 
-# We're using a Pico by default on this template
-rp-pico = "0.9"
-
-# but you can use any BSP. Uncomment this to use the pro_micro_rp2040 BSP instead
-# sparkfun-pro-micro-rp2040 = "0.8"
-
-# If you're not going to use a Board Support Package you'll need these:
-# rp2040-hal = { version="0.10", features=["rt", "critical-section-impl"] }
-# rp2040-boot2 = "0.3"
+[features]
+default = ["waveshare-rp2040-zero"] # This may change
+waveshare-rp2040-zero = ["dep:waveshare-rp2040-zero"]
+rp-pico = ["dep:rp-pico"]
 
 # cargo build/run
 [profile.dev]

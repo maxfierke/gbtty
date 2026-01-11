@@ -1,0 +1,18 @@
+.program link_leader
+
+.wrap_target
+    pull block          ; Wait for a byte to write
+    out null, 24        ; PIO FIFOs are 32-bit, but we only care about a byte,
+                        ;   so discard 24 bits
+    set pindirs, 1      ; Enable output for SCK
+    set x, 7            ; Loopin' over a byte
+loop:
+        set pins, 0     ; Set falling edge on SCK
+        out pins, 1 [8] ; Write a bit to link port
+        set pins, 1     ; Set rising edge on SCK
+        in pins, 1 [7]  ; Read a bit from consumer
+    jmp x-- loop
+    nop [8]             ; Give consumer time to receive byte
+    set pindirs, 0      ; Disable output for SCK
+    push noblock        ; Write response byte from consumer to FIFO
+.wrap
