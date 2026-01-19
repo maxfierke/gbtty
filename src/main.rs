@@ -129,7 +129,7 @@ fn main() -> ! {
 
     let mut link_port_queue_reader = {
         let (p, c) = {
-            static mut LINK_PORT_BUFFER_QUEUE: Queue<u8, 64> = Queue::new();
+            static mut LINK_PORT_BUFFER_QUEUE: Queue<u8, 4096> = Queue::new();
             // SAFETY: `LINK_PORT_BUFFER_QUEUE` is only accessible in this scope
             // and `main` is only called once.
             #[allow(static_mut_refs)]
@@ -192,7 +192,7 @@ fn USBCTRL_IRQ() {
 
     // Poll the USB driver for new serial data
     if usb_dev.poll(&mut [serial]) {
-        let mut buf = [0u8; 64];
+        let mut buf = [0u8; 512];
         match serial.read(&mut buf) {
             Err(_e) => {
                 // Do nothing
@@ -214,7 +214,7 @@ fn USBCTRL_IRQ() {
                     }
 
                     // Send back to the host for debugging
-                    match serial.write(wr_ptr) {
+                    match serial.write(&wr_ptr[0..1]) {
                         Ok(len) => wr_ptr = &wr_ptr[len..],
                         // On error, just drop unwritten data.
                         // One possible error is Err(WouldBlock), meaning the USB

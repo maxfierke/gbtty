@@ -6,13 +6,20 @@
                         ;   so discard 24 bits
     set pindirs, 1      ; Enable output for SCK
     set x, 7            ; Loopin' over a byte
-loop:
+bitloop:
         set pins, 0     ; Set falling edge on SCK
         out pins, 1 [8] ; Write a bit to link port
         set pins, 1     ; Set rising edge on SCK
         in pins, 1 [7]  ; Read a bit from consumer
-    jmp x-- loop
-    nop [10]             ; Give consumer time to receive byte
+    jmp x-- bitloop
+
+                        ; Give consumer time to receive byte
+                        ; @500kHz ~500 cycles seems to be enough
+    set x, 15           ; 16 iterations * 32 = 512 cycles
+delayloop:
+        nop [31]
+        jmp x-- delayloop
+
     set pindirs, 0      ; Disable output for SCK
     push noblock        ; Write response byte from consumer to FIFO
 .wrap
