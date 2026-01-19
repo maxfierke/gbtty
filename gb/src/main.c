@@ -36,6 +36,8 @@ uint8_t trigger_clear_screen = 0;
 #define TERM_ACK 0x6
 #define TERM_SYN_IDLE 0x16
 #endif
+#define TERM_ROWS 18
+#define TERM_COLS 20
 #define TERM_MIN_X 1
 #define TERM_MIN_Y 2
 #define TERM_MAX_X 19
@@ -51,6 +53,8 @@ uint8_t term_csi_args[TERM_CSI_ARG_LEN];
 uint8_t term_csi_arg = 0;
 uint8_t term_csi_arg_buffer_idx = 0;
 unsigned char term_csi_arg_buffer[TERM_CSI_ARG_BUFFER_LEN];
+
+unsigned char term_screen[TERM_ROWS][TERM_COLS];
 
 char line_buffer[20];
 
@@ -191,9 +195,14 @@ void print_char_at(char ch, uint8_t x, uint8_t y, font_t font) {
 }
 
 void term_clear_screen(void) {
-  cls();
   term_x = TERM_MIN_X;
   term_y = TERM_MIN_Y;
+
+  for (uint8_t row = 0; row < TERM_ROWS; row++) {
+    for (uint8_t col = 0; col < TERM_COLS; col++) {
+      term_screen[row][col] = '\0';
+    }
+  }
 }
 
 void term_advance_line(void) {
@@ -348,18 +357,18 @@ void term_handle_csi_char(unsigned char cur_char) {
     case 'J':  // Erase in display (n=0)
       term_consume_csi_arg_buffer();
       if (term_csi_args[0] == 0) {  // Clear to end of screen
-        for (uint8_t j = term_y; j < 18; j++) {
-          for (uint8_t i = 0; i < 20; i++) {
+        for (uint8_t j = term_y; j < TERM_ROWS; j++) {
+          for (uint8_t i = 0; i < TERM_COLS; i++) {
             if (j == term_y && i < term_x) continue;
-            print_char_at(' ', i, j, term_console_font);
+            term_screen[j][i] = ' ';
           }
         }
       } else if (term_csi_args[0] == 1) {
         // Clear from cursor to beginning of screen
         for (uint8_t j = 0; j <= term_y; j++) {
-          for (uint8_t i = 0; i < 20; i++) {
+          for (uint8_t i = 0; i < TERM_COLS; i++) {
             if (j == term_y && i > term_x) continue;
-            print_char_at(' ', i, j, term_console_font);
+            term_screen[j][i] = ' ';
           }
         }
       } else if (term_csi_args[0] >= 2) {
@@ -371,18 +380,18 @@ void term_handle_csi_char(unsigned char cur_char) {
     case 'K':  // Erase in line (n=0)
       term_consume_csi_arg_buffer();
       if (term_csi_args[0] == 0) {  // Clear to end of screen
-        for (uint8_t j = term_y; j < 18; j++) {
-          for (uint8_t i = 0; i < 20; i++) {
+        for (uint8_t j = term_y; j < TERM_ROWS; j++) {
+          for (uint8_t i = 0; i < TERM_COLS; i++) {
             if (j == term_y && i < term_x) continue;
-            print_char_at(' ', i, j, term_console_font);
+            term_screen[j][i] = ' ';
           }
         }
       } else if (term_csi_args[0] == 1) {
         // Clear from cursor to beginning of screen
         for (uint8_t j = 0; j <= term_y; j++) {
-          for (uint8_t i = 0; i < 20; i++) {
+          for (uint8_t i = 0; i < TERM_COLS; i++) {
             if (j == term_y && i > term_x) continue;
-            print_char_at(' ', i, j, term_console_font);
+            term_screen[j][i] = ' ';
           }
         }
       } else if (term_csi_args[0] >= 2) {
@@ -430,12 +439,12 @@ void term_handle_link_byte(unsigned char cur_char) {
 
       if (term_x > 1) {  // Current line
         // Blank out cursor
-        print_char_at(' ', term_x, term_y, term_console_font);
+        term_screen[term_y][term_x] = ' ';
         term_x--;
       } else {  // Reverse wrap
         // Blank out cursor
-        print_char_at(' ', term_x, term_y, term_console_font);
-        term_x = 18;
+        term_screen[term_y][term_x] = ' ';
+        term_x = TERM_MAX_X - 1;
         term_y--;
       }
       return;
@@ -464,17 +473,17 @@ void term_handle_link_byte(unsigned char cur_char) {
       break;
   }
 
-  print_char_at(cur_char, term_x, term_y, term_console_font);
+  term_screen[term_y][term_x] = cur_char;
   term_x++;
 
-  if (term_x >= 19) {
+  if (term_x >= TERM_MAX_X) {
     term_advance_line();
   }
 }
 
 void draw_term_state(void) {
   if (!term_esc && !term_csi) {
-    print_str_at("   ", 1, 16, invert_min_font);
+    print_str_at("   ", 1, 16, term_console_font);
   } else if (term_esc && !term_csi) {
     print_str_at("ESC", 1, 16, invert_min_font);
   } else if (term_csi && !term_csi_args[0]) {
@@ -498,12 +507,15 @@ void draw(void) {
     print_str_at("GBTTY", 8, 1, title_font);
     print_str_at("START to begin", 3, 12, invert_min_font);
   } else {
-    print_char_at(' ', term_x, term_y, invert_min_font);
-  }
-
-  if (trigger_clear_screen) {
-    term_clear_screen();
-    trigger_clear_screen = 0;
+    for (uint8_t row = TERM_MIN_Y; row < TERM_MAX_Y; row++) {
+      for (uint8_t col = TERM_MIN_X; col < TERM_MAX_X; col++) {
+        if (row == term_y && col == term_x) {
+          print_char_at(term_screen[row][col], col, row, invert_min_font);
+        } else {
+          print_char_at(term_screen[row][col], col, row, term_console_font);
+        }
+      }
+    }
   }
 
   draw_term_state();
@@ -514,20 +526,21 @@ void update(void) {
     if (KEY_RELEASED(J_START)) {
       term_started = 1;
       init_link_port();
-      print_str_at("               ", 3, 12, title_font);
     }
 
     return;
   }
 
   if (KEY_PRESSED(J_SELECT) && KEY_PRESSED(J_START)) {
-    trigger_clear_screen = 1;
+    term_clear_screen();
   }
 
-  if (term_started && link_buffer_head != link_buffer_tail) {
-    unsigned char next_char = link_buffer[link_buffer_tail];
-    link_buffer_tail = (link_buffer_tail + 1) % LINK_BUFFER_SIZE;
-    term_handle_link_byte(next_char);
+  if (term_started) {
+    while (link_buffer_head != link_buffer_tail) {
+      unsigned char next_char = link_buffer[link_buffer_tail];
+      link_buffer_tail = (link_buffer_tail + 1) % LINK_BUFFER_SIZE;
+      term_handle_link_byte(next_char);
+    }
   }
 }
 
