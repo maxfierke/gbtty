@@ -90,6 +90,8 @@ impl<SINID: PinId, SCKID: PinId, SOUTID: PinId, PIO: PIOExt, SM: StateMachineInd
             rx,
         }
     }
+
+    #[allow(clippy::type_complexity)]
     fn build_pio(
         token: &mut LinkPortLeaderProgram<PIO>,
         sin_id: u8,
@@ -118,14 +120,11 @@ impl<SINID: PinId, SCKID: PinId, SOUTID: PinId, PIO: PIOExt, SM: StateMachineInd
             .buffers(pio::Buffers::RxTx)
             .clock_divisor_fixed_point(div, 0)
             .build(sm);
-        sm.set_pindirs(
-            [
-                (sin_id, pio::PinDir::Input),
-                (sck_id, pio::PinDir::Output),
-                (sout_id, pio::PinDir::Output),
-            ]
-            .into_iter(),
-        );
+        sm.set_pindirs([
+            (sin_id, pio::PinDir::Input),
+            (sck_id, pio::PinDir::Output),
+            (sout_id, pio::PinDir::Output),
+        ]);
         (sm, rx, tx)
     }
 
@@ -148,6 +147,7 @@ impl<SINID: PinId, SCKID: PinId, SOUTID: PinId, PIO: PIOExt, SM: StateMachineInd
     ///
     /// # Returns
     /// A tuple containing the used SM and the SIN, SCK, and SOUT pins.
+    #[allow(clippy::type_complexity)]
     #[allow(unused)]
     pub fn free(
         self,
@@ -178,7 +178,7 @@ impl<SINID: PinId, SCKID: PinId, SOUTID: PinId, PIO: PIOExt, SM: StateMachineInd
         while let Some(b) = self.rx.read() {
             buf[0] = (b >> 24) as u8;
             buf = &mut buf[1..];
-            if buf.len() == 0 {
+            if buf.is_empty() {
                 break;
             }
         }

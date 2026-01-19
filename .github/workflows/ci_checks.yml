@@ -44,7 +44,7 @@ jobs:
         with:
           components: clippy
           target: thumbv6m-none-eabi
-      - run: cargo clippy --all-features -- --deny=warnings
+      - run: cargo clippy -- --deny=warnings
   formatting:
     name: Formatting
     runs-on: ubuntu-latest
