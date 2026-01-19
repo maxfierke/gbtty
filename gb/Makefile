@@ -56,7 +56,7 @@ $(BINS):	$(OBJS)
 	$(LCC) $(LCCFLAGS) -o $(BINS) $(OBJS)
 
 prepare:
-	mkdir -p $(OBJDIR)
+	@mkdir -p $(OBJDIR)
 
 clean:
 #	rm -f  *.gb *.ihx *.cdb *.adb *.noi *.map

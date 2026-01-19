@@ -5,31 +5,62 @@
 #include <gbdk/font.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Keys
-uint8_t previousKeys = 0;
+uint8_t previous_keys = 0;
 uint8_t keys = 0;
-#define UPDATE_KEYS()  \
-  previousKeys = keys; \
+#define UPDATE_KEYS()   \
+  previous_keys = keys; \
   keys = joypad()
 #define KEY_PRESSED(K) (keys & (K))
-#define KEY_TICKED(K) ((keys & (K)) && !(previousKeys & (K)))
-#define KEY_RELEASED(K) (!(keys & (K)) && (previousKeys & (K)))
+#define KEY_TICKED(K) ((keys & (K)) && !(previous_keys & (K)))
+#define KEY_RELEASED(K) (!(keys & (K)) && (previous_keys & (K)))
 #define NO_KEYS_PRESSED() keys == 0
 
 // Globals
-uint8_t themeIndex = 0;
-uint8_t triggerMessageClear = 0;
+uint8_t theme_index = 0;
+uint8_t trigger_clear_screen = 0;
 
-uint8_t term_x = 1;
-uint8_t term_y = 2;
+#ifndef TERM_ACK_GBDK_COMPAT
+#define TERM_ACK_GBDK_COMPAT 0
+#endif
+
+#if TERM_ACK_GBDK_COMPAT
+// Compatibility with GBDK send_byte/receive_byte
+// Used for testing
+#define TERM_ACK 0x55
+#define TERM_SYN_IDLE 0x55
+#else
+#define TERM_ACK 0x6
+#define TERM_SYN_IDLE 0x16
+#endif
+#define TERM_MIN_X 1
+#define TERM_MIN_Y 2
+#define TERM_MAX_X 19
+#define TERM_MAX_Y 16
+#define TERM_CSI_ARG_LEN 6
+#define TERM_CSI_ARG_BUFFER_LEN 12  // nnn;mmm;mmmC
 uint8_t term_started = 0;
+uint8_t term_x = TERM_MIN_X;
+uint8_t term_y = TERM_MIN_Y;
+uint8_t term_esc = 0;
+uint8_t term_csi = 0;
+uint8_t term_csi_args[TERM_CSI_ARG_LEN];
+uint8_t term_csi_arg = 0;
+uint8_t term_csi_arg_buffer_idx = 0;
+unsigned char term_csi_arg_buffer[TERM_CSI_ARG_BUFFER_LEN];
 
-char textBuffer[20];
+char line_buffer[20];
+
+#define LINK_BUFFER_SIZE 32
+unsigned char link_buffer[LINK_BUFFER_SIZE];
+volatile uint8_t link_buffer_head = 0;
+volatile uint8_t link_buffer_tail = 0;
 
 // Drawing & Themes
-font_t titleFont, consoleFont, minFontInvert;
+font_t title_font, term_console_font, invert_min_font;
 #define RGB_GOLD 0x331C
 #define RGB_DARK_PURPLE 0x2405
 #define RGB_DARK_GREEN 0x0923
@@ -103,172 +134,400 @@ palette_color_t* palettes[] = {
     paletteDusk,       paletteSunrise,    paletteWhiteHC,   paletteBlackHC};
 const uint8_t themeCount = sizeof palettes / sizeof palettes[0];
 
-void setupFonts(void) {
+void link_port_interrupt(void) {
+  uint8_t data = SB_REG;
+
+  uint8_t next_head = (link_buffer_head + 1) % LINK_BUFFER_SIZE;
+  if (next_head != link_buffer_tail) {
+    link_buffer[link_buffer_head] = data;
+    link_buffer_head = next_head;
+  }
+
+  SB_REG = TERM_ACK;
+  SC_REG = SIOF_CLOCK_EXT | SIOF_XFER_START;
+}
+
+void init_link_port(void) {
+  CRITICAL { add_SIO(link_port_interrupt); }
+
+  SB_REG = TERM_SYN_IDLE;
+
+  // Set to external clock, we're not drivin' this thing
+  SC_REG = SIOF_CLOCK_EXT | SIOF_XFER_START;
+
+  set_interrupts(SIO_IFLAG | VBL_IFLAG);
+}
+
+void setup_fonts(void) {
   font_init();
   font_color(0, 3);
-  consoleFont = font_load(font_ibm);
+  term_console_font = font_load(font_ibm);
 
   if (DEVICE_SUPPORTS_COLOR) {
     font_color(2, 3);
   } else {
     font_color(0, 3);
   }
-  titleFont = font_load(font_ibm);
+  title_font = font_load(font_ibm);
 
   if (DEVICE_SUPPORTS_COLOR) {
     font_color(1, 2);
   } else {
     font_color(3, 0);
   }
-  minFontInvert = font_load(font_min);
+  invert_min_font = font_load(font_min);
 }
 
-void printAtWith(char str[], uint8_t x, uint8_t y, font_t font) {
+void print_str_at(char str[], uint8_t x, uint8_t y, font_t font) {
   font_set(font);
   gotoxy(x, y);
   printf(str);
 }
 
-void printCharAt(unsigned ch, uint8_t x, uint8_t y, font_t font) {
+void print_char_at(char ch, uint8_t x, uint8_t y, font_t font) {
   font_set(font);
   gotoxy(x, y);
   setchar(ch);
 }
 
-font_t pressedFont(uint8_t key) {
-  if (KEY_PRESSED(key)) {
-    return minFontInvert;
-  } else {
-    return consoleFont;
-  }
-}
-
-void clearScreen(void) {
+void term_clear_screen(void) {
   cls();
-  term_x = 1;
-  term_y = 2;
+  term_x = TERM_MIN_X;
+  term_y = TERM_MIN_Y;
 }
 
-void printModel(void) {
-  if (_is_GBA) {
-    printAtWith(" A", 17, 16, consoleFont);
-  } else if (_cpu == CGB_TYPE) {
-    printAtWith(" C", 17, 16, consoleFont);
-  } else if (_cpu == MGB_TYPE) {
-    printAtWith(" M", 17, 16, consoleFont);
-  } else {
-    printAtWith(" D", 17, 16, consoleFont);
-  }
-}
-
-void setPalette(palette_color_t* pal) {
-  if (DEVICE_SUPPORTS_COLOR) set_bkg_palette(0, 1, pal);
-}
-
-void advanceTermLine(void) {
-  term_x = 1;
+void term_advance_line(void) {
+  term_x = TERM_MIN_X;
   term_y++;
-  if (term_y >= 16) {
-    term_y = 2;
+  if (term_y >= TERM_MAX_Y) {
+    term_y = TERM_MIN_Y;
   }
 }
 
-void handleNextLinkByte(void) {
-  if (_io_status == IO_IDLE) {
-    unsigned char curChar = (unsigned char)_io_in;
+void term_consume_csi_arg_buffer(void) {
+  unsigned char arg_buf[4] = {0x0, 0x0, 0x0, 0x0};  // 3+1 NULL
+  uint8_t arg_buf_idx = 0;
+  for (uint8_t i = 0; i < TERM_CSI_ARG_LEN; i++) {
+    unsigned char arg_char = term_csi_arg_buffer[i];
 
-    if (curChar == '\0' || curChar == (unsigned char)0xFF) {
+    if (arg_char == '\0') {
+      // End-of-buffer
+      break;
+    } else if (arg_char == ';' || arg_buf_idx == 3) {
+      term_csi_args[term_csi_arg] = (uint8_t)atoi(arg_buf);
+      term_csi_arg++;
+      arg_buf[0] = 0x0;
+      arg_buf[1] = 0x0;
+      arg_buf[2] = 0x0;
+    } else if (arg_char >= 0x30 && arg_char <= 0x39) {
+      arg_buf[arg_buf_idx] = arg_char;
+      arg_buf_idx++;
+    }
+  }
+}
+
+void term_reset_csi(void) {
+  for (uint8_t i = 0; i < TERM_CSI_ARG_LEN; i++) {
+    term_csi_args[i] = 0x0;
+  }
+  for (uint8_t i = 0; i < TERM_CSI_ARG_BUFFER_LEN; i++) {
+    term_csi_arg_buffer[i] = 0x0;
+  }
+  term_csi = 0;
+}
+
+void term_handle_csi_char(unsigned char cur_char) {
+  switch (cur_char) {
+    case 'A':  // Cursor up (n=1)
+      term_consume_csi_arg_buffer();
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
+        if (term_y > TERM_MIN_Y) {
+          term_y--;
+        }
+      }
+      term_reset_csi();
+      break;
+    case 'B':  // Cursor down (n=1)
+      term_consume_csi_arg_buffer();
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
+        if (term_y < TERM_MAX_Y) {
+          term_y++;
+        }
+      }
+      term_reset_csi();
+      break;
+    case 'C':  // Cursor forward (n=1)
+      term_consume_csi_arg_buffer();
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
+        if (term_x < TERM_MAX_X) {
+          term_x++;
+        }
+      }
+      term_reset_csi();
+      break;
+    case 'D':  // Cursor back (n=1)
+      term_consume_csi_arg_buffer();
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
+        if (term_x > TERM_MIN_X + 1) {
+          term_x--;
+        }
+      }
+      term_reset_csi();
+      break;
+    case 'E':  // Cursor next line (n=1)
+      term_consume_csi_arg_buffer();
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
+        if (term_y < TERM_MAX_Y + 1) {
+          term_y++;
+          term_x = TERM_MIN_X;
+        }
+      }
+      break;
+    case 'F':  // Cursor prev line (n=1)
+      term_consume_csi_arg_buffer();
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
+        if (term_y > TERM_MIN_Y + 1) {
+          term_y--;
+          term_x = TERM_MIN_X;
+        }
+      }
+      term_reset_csi();
+      break;
+    case 'G':  // Cursor horzontal absolute (n=1)
+      term_consume_csi_arg_buffer();
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      if (term_csi_args[0] > TERM_MAX_X) {
+        term_csi_args[0] = TERM_MAX_X;
+      }
+
+      term_x = term_csi_args[0];
+
+      term_reset_csi();
+      break;
+    case 'H':  // Cursor position (n=1, m=1)
+      term_consume_csi_arg_buffer();
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      if (term_csi_args[0] > TERM_MAX_X) {
+        term_csi_args[0] = TERM_MAX_X;
+      }
+      if (!term_csi_args[1]) {
+        term_csi_args[1] = 1;
+      }
+
+      if (term_csi_args[1] > TERM_MAX_Y) {
+        term_csi_args[1] = TERM_MAX_Y;
+      }
+
+      term_x = term_csi_args[0];
+      term_y = term_csi_args[1];
+
+      term_reset_csi();
+      break;
+    case 'J':  // Erase in display (n=0)
+      term_consume_csi_arg_buffer();
+      if (term_csi_args[0] == 0) {  // Clear to end of screen
+        for (uint8_t j = term_y; j < 18; j++) {
+          for (uint8_t i = 0; i < 20; i++) {
+            if (j == term_y && i < term_x) continue;
+            print_char_at(' ', i, j, term_console_font);
+          }
+        }
+      } else if (term_csi_args[0] == 1) {
+        // Clear from cursor to beginning of screen
+        for (uint8_t j = 0; j <= term_y; j++) {
+          for (uint8_t i = 0; i < 20; i++) {
+            if (j == term_y && i > term_x) continue;
+            print_char_at(' ', i, j, term_console_font);
+          }
+        }
+      } else if (term_csi_args[0] >= 2) {
+        term_clear_screen();
+      }
+
+      term_reset_csi();
+      break;
+    case 'K':  // Erase in line (n=0)
+      term_consume_csi_arg_buffer();
+      if (term_csi_args[0] == 0) {  // Clear to end of screen
+        for (uint8_t j = term_y; j < 18; j++) {
+          for (uint8_t i = 0; i < 20; i++) {
+            if (j == term_y && i < term_x) continue;
+            print_char_at(' ', i, j, term_console_font);
+          }
+        }
+      } else if (term_csi_args[0] == 1) {
+        // Clear from cursor to beginning of screen
+        for (uint8_t j = 0; j <= term_y; j++) {
+          for (uint8_t i = 0; i < 20; i++) {
+            if (j == term_y && i > term_x) continue;
+            print_char_at(' ', i, j, term_console_font);
+          }
+        }
+      } else if (term_csi_args[0] >= 2) {
+        term_clear_screen();
+      }
+
+      term_reset_csi();
+      break;
+    default:
+      if (term_csi_arg == TERM_CSI_ARG_LEN ||
+          term_csi_arg_buffer_idx == TERM_CSI_ARG_BUFFER_LEN) {
+        // Ignore unknown CSI commands/arguments (TODO: too greedy?)
+        term_reset_csi();
+        break;
+      }
+
+      term_csi_arg_buffer[term_csi_arg_buffer_idx] = cur_char;
+      term_csi_arg_buffer_idx++;
+      break;
+  }
+}
+
+void term_handle_link_byte(unsigned char cur_char) {
+  switch (cur_char) {
+    case '\0':
+    case 0xFF:
       // Skip NULL and dirty reads
       return;
-    }
-    if (curChar == (unsigned char)0x7F) {  // Handle backspace
-      if (term_x > 1) {
-        printCharAt(' ', term_x, term_y, consoleFont);  // Blank out cursor
-        term_x--;
+    case 0x1B:  // ESC
+      if (!term_esc) {
+        // Enable ESC
+        term_esc = 1;
       }
       return;
-    }
+    case 0x5B:  // CSI (7-bit)
+    case 0x9B:  // CSI (8-bit)
+      if (term_esc && !term_csi) {
+        // Enable CSI
+        term_esc = 0;
+        term_csi = 1;
+        return;
+      }
+    case 0x08:  // BS
+    case 0x7F:  // DEL
 
-    // Skip unprintable characters
-    if (curChar < ' ' || curChar > (unsigned char)0x7F) return;
+      if (term_x > 1) {  // Current line
+        // Blank out cursor
+        print_char_at(' ', term_x, term_y, term_console_font);
+        term_x--;
+      } else {  // Reverse wrap
+        // Blank out cursor
+        print_char_at(' ', term_x, term_y, term_console_font);
+        term_x = 18;
+        term_y--;
+      }
+      return;
+    case '\a':
+      // TODO: Ding a bell here.
+      return;
+    case '\n':
+    case 0x0D:
+      term_advance_line();
+      return;
+    case '\t':
+      // Tabs = spaces here. We're working with 20x18!
+      cur_char = ' ';
+      break;
+    default:
+      if (term_csi) {
+        term_handle_csi_char(cur_char);
+        return;
+      }
 
-    if (curChar == '\n') {
-      advanceTermLine();
-    }
+      // Skip unprintable characters
+      if (cur_char < ' ' || cur_char > (unsigned char)0x7F) {
+        return;
+      }
 
-    printCharAt(curChar, term_x, term_y, consoleFont);
-    term_x++;
+      break;
+  }
+
+  print_char_at(cur_char, term_x, term_y, term_console_font);
+  term_x++;
+
+  if (term_x >= 19) {
+    term_advance_line();
   }
 }
 
-void drawLinkState(void) {
-  if (SB_REG == 0xFF || !SB_REG) {
-    printModel();
-  } else {
-    unsigned char* status = "";
-    uint16_t status_font = minFontInvert;
-    switch (_io_status) {
-      case IO_IDLE:  // When we're writing, this is true, so it appears as
-                     // though we're actually receiving
-        status = "R";
-        break;
-      case IO_SENDING:
-        status = "S";
-        break;
-      case IO_RECEIVING:  // This is set while _waiting_/ready for new data, so
-                          // it appears as idle
-        status = " ";
-        status_font = titleFont;
-        break;
-      case IO_ERROR:
-        status = "E";
-        break;
-    }
-    sprintf(textBuffer, "%s", (unsigned char*)status);
-    printAtWith(textBuffer, 1, 16, status_font);
-    sprintf(textBuffer, "%hx", (uint8_t)SB_REG);
-    printAtWith(textBuffer, 17, 16, minFontInvert);
+void draw_term_state(void) {
+  if (!term_esc && !term_csi) {
+    print_str_at("   ", 1, 16, invert_min_font);
+  } else if (term_esc && !term_csi) {
+    print_str_at("ESC", 1, 16, invert_min_font);
+  } else if (term_csi && !term_csi_args[0]) {
+    print_str_at("CSI", 1, 16, invert_min_font);
+  } else if (term_csi) {
+    sprintf(line_buffer, "^[[%s", (unsigned char*)term_csi_arg_buffer);
+    print_str_at(line_buffer, 1, 16, invert_min_font);
   }
+
+  sprintf(line_buffer, "%hx %hx %hx %hx",
+          (uint8_t)link_buffer[(link_buffer_head - 3) % LINK_BUFFER_SIZE],
+          (uint8_t)link_buffer[(link_buffer_head - 2) % LINK_BUFFER_SIZE],
+          (uint8_t)link_buffer[(link_buffer_head - 1) % LINK_BUFFER_SIZE],
+          (uint8_t)link_buffer[link_buffer_head]);
+  print_str_at(line_buffer, 8, 16, invert_min_font);
 }
 
 // Main Loop
 void draw(void) {
-  printAtWith("GBTTY", 1, 1, titleFont);
-
   if (!term_started) {
-    printAtWith("START to begin", 3, 12, minFontInvert);
+    print_str_at("GBTTY", 8, 1, title_font);
+    print_str_at("START to begin", 3, 12, invert_min_font);
   } else {
-    if (term_x >= 19) {
-      advanceTermLine();
-    }
-    printCharAt(' ', term_x, term_y, minFontInvert);
+    print_char_at(' ', term_x, term_y, invert_min_font);
   }
 
-  if (triggerMessageClear) {
-    clearScreen();
-    triggerMessageClear = 0;
+  if (trigger_clear_screen) {
+    term_clear_screen();
+    trigger_clear_screen = 0;
   }
 
-  drawLinkState();
+  draw_term_state();
 }
 
 void update(void) {
   if (!term_started) {
     if (KEY_RELEASED(J_START)) {
       term_started = 1;
-      printAtWith("               ", 3, 12, titleFont);
+      init_link_port();
+      print_str_at("               ", 3, 12, title_font);
     }
 
     return;
   }
 
-  if (KEY_RELEASED(J_SELECT) && KEY_RELEASED(J_START)) {
-    triggerMessageClear = 1;
+  if (KEY_PRESSED(J_SELECT) && KEY_PRESSED(J_START)) {
+    trigger_clear_screen = 1;
   }
 
-  handleNextLinkByte();
-  if (_io_status == IO_IDLE) {
-    receive_byte();
+  if (term_started && link_buffer_head != link_buffer_tail) {
+    unsigned char next_char = link_buffer[link_buffer_tail];
+    link_buffer_tail = (link_buffer_tail + 1) % LINK_BUFFER_SIZE;
+    term_handle_link_byte(next_char);
   }
 }
 
@@ -280,14 +539,11 @@ void main(void) {
   SHOW_SPRITES;
   SPRITES_8x8;
 
-  setPalette(palettes[themeIndex]);
+  if (DEVICE_SUPPORTS_COLOR) {
+    set_bkg_palette(0, 1, palettes[theme_index]);
+  }
 
-  setupFonts();
-
-  // Sentinel value for unitialized
-  SB_REG = 0xFF;
-  // Set to external clock, we're not drivin' this thing
-  SC_REG = SIOF_CLOCK_EXT;
+  setup_fonts();
 
   DISPLAY_ON;
 
