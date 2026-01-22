@@ -87,7 +87,7 @@ fn main() -> ! {
         gp3.reconfigure(),
         sm1,
         &mut leader_program,
-        fugit::HertzU32::kHz(500).convert(),
+        fugit::HertzU32::Hz(262144).convert(), // ~32KB/s
         clocks.system_clock.freq(),
     );
 
@@ -192,7 +192,7 @@ fn USBCTRL_IRQ() {
 
     // Poll the USB driver for new serial data
     if usb_dev.poll(&mut [serial]) {
-        let mut buf = [0u8; 512];
+        let mut buf = [0u8; 128];
         match serial.read(&mut buf) {
             Err(_e) => {
                 // Do nothing
