@@ -14,7 +14,7 @@ LCCFLAGS ?= -Wm-yn"GBTTY" -Wm-yc -Wl-yt0x1B -Wl-ya1 -Wm-yj
 
 # GBDK_DEBUG = ON
 ifdef GBDK_DEBUG
-	LCCFLAGS += -debug -v
+	LCCFLAGS += -debug -v -DTERM_ACK_GBDK_COMPAT=1
 endif
 
 # You can set the name of the .gb ROM file here
