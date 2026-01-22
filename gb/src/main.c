@@ -58,7 +58,7 @@ unsigned char term_screen[TERM_ROWS][TERM_COLS];
 
 char line_buffer[20];
 
-#define LINK_BUFFER_SIZE 32
+#define LINK_BUFFER_SIZE 128
 unsigned char link_buffer[LINK_BUFFER_SIZE];
 volatile uint8_t link_buffer_head = 0;
 volatile uint8_t link_buffer_tail = 0;
