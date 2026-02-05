@@ -47,6 +47,8 @@ static mut USB_SERIAL: Option<SerialPort<bsp::hal::usb::UsbBus>> = None;
 /// Link port TX queue
 static mut LINK_PORT_BUFFER_WRITER: Option<Producer<'_, u8>> = None;
 
+static LINK_PORT_CLOCK_HZ: u32 = 262144; // ~32KB/s on normal speed
+
 #[entry]
 fn main() -> ! {
     let mut pac = pac::Peripherals::take().unwrap();
@@ -72,22 +74,34 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    let gp0: Pin<_, FunctionPio0, _> = pins.gp0.into_function();
-    let gp2: Pin<_, FunctionPio0, _> = pins.gp2.into_function();
-    let gp3: Pin<_, FunctionPio0, _> = pins.gp3.into_function();
+    #[cfg(feature = "rp-pico")]
+    let (sin_pin, sck_pin, sout_pin) = {
+        let gp0: Pin<_, FunctionPio0, _> = pins.gp0.into_function();
+        let gp1: Pin<_, FunctionPio0, _> = pins.gp1.into_function();
+        let gp2: Pin<_, FunctionPio0, _> = pins.gp2.into_function();
+        (gp0, gp1, gp2)
+    };
 
-    let (mut pio0, _sm0, sm1, _sm2, _sm3) = pio::PIOExt::split(pac.PIO0, &mut pac.RESETS);
+    #[cfg(feature = "waveshare-rp2040-zero")]
+    let (sin_pin, sck_pin, sout_pin) = {
+        let gp0: Pin<_, FunctionPio0, _> = pins.gp0.into_function();
+        let gp2: Pin<_, FunctionPio0, _> = pins.gp2.into_function();
+        let gp3: Pin<_, FunctionPio0, _> = pins.gp3.into_function();
+        (gp0, gp2, gp3)
+    };
+
+    let (mut pio0, sm0, _sm1, _sm2, _sm3) = pio::PIOExt::split(pac.PIO0, &mut pac.RESETS);
     let mut leader_program = link_port::install_link_port_leader_program(&mut pio0)
         .ok()
         .unwrap();
 
     let port = link_port::PioGbLinkPortLeader::new(
-        gp0.reconfigure(),
-        gp2.reconfigure(),
-        gp3.reconfigure(),
-        sm1,
+        sin_pin.reconfigure(),
+        sck_pin.reconfigure(),
+        sout_pin.reconfigure(),
+        sm0,
         &mut leader_program,
-        fugit::HertzU32::Hz(262144).convert(), // ~32KB/s
+        fugit::HertzU32::Hz(LINK_PORT_CLOCK_HZ).convert(),
         clocks.system_clock.freq(),
     );
 
