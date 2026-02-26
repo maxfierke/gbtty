@@ -176,7 +176,7 @@ impl<SINID: PinId, SCKID: PinId, SOUTID: PinId, PIO: PIOExt, SM: StateMachineInd
     pub fn read_raw(&mut self, mut buf: &mut [u8]) -> Result<usize, ()> {
         let buf_len = buf.len();
         while let Some(b) = self.rx.read() {
-            buf[0] = (b >> 24) as u8;
+            buf[0] = b as u8;
             buf = &mut buf[1..];
             if buf.is_empty() {
                 break;
