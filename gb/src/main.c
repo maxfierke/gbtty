@@ -39,9 +39,9 @@ uint8_t trigger_clear_screen = 0;
 #define TERM_ROWS 18
 #define TERM_COLS 20
 #define TERM_MIN_X 1
-#define TERM_MIN_Y 2
-#define TERM_MAX_X 19
-#define TERM_MAX_Y 16
+#define TERM_MIN_Y 1
+#define TERM_MAX_X 18
+#define TERM_MAX_Y 15
 #define TERM_CSI_ARG_LEN 6
 #define TERM_CSI_ARG_BUFFER_LEN 12  // nnn;mmm;mmmC
 uint8_t term_started = 0;
@@ -213,115 +213,151 @@ void term_advance_line(void) {
   }
 }
 
+inline void term_cursor_up(void) {
+  if (term_y > TERM_MIN_Y) {
+    term_y--;
+  }
+}
+
+inline void term_cursor_down(void) {
+  if (term_y < TERM_MAX_Y) {
+    term_y++;
+  }
+}
+
+inline void term_cursor_forward(void) {
+  if (term_x < TERM_MAX_X) {
+    term_x++;
+  }
+}
+
+inline void term_cursor_backward(void) {
+  if (term_x > TERM_MIN_X) {
+    term_x--;
+  }
+}
+
 void term_consume_csi_arg_buffer(void) {
   unsigned char arg_buf[4] = {0x0, 0x0, 0x0, 0x0};  // 3+1 NULL
   uint8_t arg_buf_idx = 0;
-  for (uint8_t i = 0; i < TERM_CSI_ARG_LEN; i++) {
+  for (uint8_t i = 0; i < TERM_CSI_ARG_BUFFER_LEN; i++) {
     unsigned char arg_char = term_csi_arg_buffer[i];
 
     if (arg_char == '\0') {
       // End-of-buffer
       break;
-    } else if (arg_char == ';' || arg_buf_idx == 3) {
+    } else if (arg_char >= 0x30 && arg_char <= 0x39) {
+      arg_buf[arg_buf_idx] = arg_char;
+      arg_buf_idx++;
+    }
+
+    if (arg_char == ';' || arg_buf_idx == 3) {
       term_csi_args[term_csi_arg] = (uint8_t)atoi(arg_buf);
       term_csi_arg++;
       arg_buf[0] = 0x0;
       arg_buf[1] = 0x0;
       arg_buf[2] = 0x0;
-    } else if (arg_char >= 0x30 && arg_char <= 0x39) {
-      arg_buf[arg_buf_idx] = arg_char;
-      arg_buf_idx++;
+      arg_buf_idx = 0;
     }
+  }
+
+  if (arg_buf_idx > 0) {
+    term_csi_args[term_csi_arg] = (uint8_t)atoi(arg_buf);
+    term_csi_arg++;
   }
 }
 
 void term_reset_csi(void) {
-  for (uint8_t i = 0; i < TERM_CSI_ARG_LEN; i++) {
-    term_csi_args[i] = 0x0;
-  }
-  for (uint8_t i = 0; i < TERM_CSI_ARG_BUFFER_LEN; i++) {
-    term_csi_arg_buffer[i] = 0x0;
-  }
+  memset(term_csi_args, 0, TERM_CSI_ARG_LEN);
+  memset(term_csi_arg_buffer, 0, TERM_CSI_ARG_BUFFER_LEN);
   term_csi = 0;
+  term_csi_arg = 0;
+  term_csi_arg_buffer_idx = 0;
 }
 
 void term_handle_csi_char(unsigned char cur_char) {
   switch (cur_char) {
     case 'A':  // Cursor up (n=1)
       term_consume_csi_arg_buffer();
+
       if (!term_csi_args[0]) {
         term_csi_args[0] = 1;
       }
       for (uint8_t i = 0; i < term_csi_args[0]; i++) {
-        if (term_y > TERM_MIN_Y) {
-          term_y--;
-        }
+        term_cursor_up();
       }
+
       term_reset_csi();
       break;
     case 'B':  // Cursor down (n=1)
       term_consume_csi_arg_buffer();
+
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
+        term_cursor_down();
+      }
+
+      term_reset_csi();
+      break;
+    case 'C':  // Cursor forward (n=1)
+      term_consume_csi_arg_buffer();
+
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
+        term_cursor_forward();
+      }
+
+      term_reset_csi();
+      break;
+    case 'D':  // Cursor back (n=1)
+      term_consume_csi_arg_buffer();
+
+      if (!term_csi_args[0]) {
+        term_csi_args[0] = 1;
+      }
+      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
+        term_cursor_backward();
+      }
+
+      term_reset_csi();
+      break;
+    case 'E':  // Cursor next line (n=1)
+      term_consume_csi_arg_buffer();
+
       if (!term_csi_args[0]) {
         term_csi_args[0] = 1;
       }
       for (uint8_t i = 0; i < term_csi_args[0]; i++) {
         if (term_y < TERM_MAX_Y) {
           term_y++;
-        }
-      }
-      term_reset_csi();
-      break;
-    case 'C':  // Cursor forward (n=1)
-      term_consume_csi_arg_buffer();
-      if (!term_csi_args[0]) {
-        term_csi_args[0] = 1;
-      }
-      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
-        if (term_x < TERM_MAX_X) {
-          term_x++;
-        }
-      }
-      term_reset_csi();
-      break;
-    case 'D':  // Cursor back (n=1)
-      term_consume_csi_arg_buffer();
-      if (!term_csi_args[0]) {
-        term_csi_args[0] = 1;
-      }
-      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
-        if (term_x > TERM_MIN_X + 1) {
-          term_x--;
-        }
-      }
-      term_reset_csi();
-      break;
-    case 'E':  // Cursor next line (n=1)
-      term_consume_csi_arg_buffer();
-      if (!term_csi_args[0]) {
-        term_csi_args[0] = 1;
-      }
-      for (uint8_t i = 0; i < term_csi_args[0]; i++) {
-        if (term_y < TERM_MAX_Y + 1) {
-          term_y++;
           term_x = TERM_MIN_X;
         }
       }
+
+      term_reset_csi();
       break;
     case 'F':  // Cursor prev line (n=1)
       term_consume_csi_arg_buffer();
+
       if (!term_csi_args[0]) {
         term_csi_args[0] = 1;
       }
       for (uint8_t i = 0; i < term_csi_args[0]; i++) {
-        if (term_y > TERM_MIN_Y + 1) {
+        if (term_y > TERM_MIN_Y) {
           term_y--;
           term_x = TERM_MIN_X;
         }
       }
+
       term_reset_csi();
       break;
     case 'G':  // Cursor horzontal absolute (n=1)
       term_consume_csi_arg_buffer();
+
       if (!term_csi_args[0]) {
         term_csi_args[0] = 1;
       }
@@ -335,6 +371,7 @@ void term_handle_csi_char(unsigned char cur_char) {
       break;
     case 'H':  // Cursor position (n=1, m=1)
       term_consume_csi_arg_buffer();
+
       if (!term_csi_args[0]) {
         term_csi_args[0] = 1;
       }
@@ -356,6 +393,7 @@ void term_handle_csi_char(unsigned char cur_char) {
       break;
     case 'J':  // Erase in display (n=0)
       term_consume_csi_arg_buffer();
+
       if (term_csi_args[0] == 0) {  // Clear to end of screen
         for (uint8_t j = term_y; j < TERM_ROWS; j++) {
           for (uint8_t i = 0; i < TERM_COLS; i++) {
@@ -379,6 +417,7 @@ void term_handle_csi_char(unsigned char cur_char) {
       break;
     case 'K':  // Erase in line (n=0)
       term_consume_csi_arg_buffer();
+
       if (term_csi_args[0] == 0) {  // Clear to end of screen
         for (uint8_t j = term_y; j < TERM_ROWS; j++) {
           for (uint8_t i = 0; i < TERM_COLS; i++) {
@@ -434,6 +473,7 @@ void term_handle_link_byte(unsigned char cur_char) {
         term_csi = 1;
         return;
       }
+      break;
     case 0x08:  // BS
     case 0x7F:  // DEL
 
@@ -444,15 +484,16 @@ void term_handle_link_byte(unsigned char cur_char) {
       } else {  // Reverse wrap
         // Blank out cursor
         term_screen[term_y][term_x] = ' ';
-        term_x = TERM_MAX_X - 1;
+        term_x = TERM_MAX_X;
         term_y--;
       }
       return;
     case '\a':
       // TODO: Ding a bell here.
       return;
+    case '\v':
     case '\n':
-    case 0x0D:
+    case '\r':
       term_advance_line();
       return;
     case '\t':
@@ -476,7 +517,7 @@ void term_handle_link_byte(unsigned char cur_char) {
   term_screen[term_y][term_x] = cur_char;
   term_x++;
 
-  if (term_x >= TERM_MAX_X) {
+  if (term_x > TERM_MAX_X) {
     term_advance_line();
   }
 }
@@ -535,6 +576,18 @@ void update(void) {
     term_clear_screen();
   }
 
+  if (KEY_PRESSED(J_UP)) {
+    term_cursor_up();
+  } else if (KEY_PRESSED(J_DOWN)) {
+    term_cursor_down();
+  }
+
+  if (KEY_PRESSED(J_LEFT)) {
+    term_cursor_backward();
+  } else if (KEY_PRESSED(J_RIGHT)) {
+    term_cursor_forward();
+  }
+
   if (term_started) {
     while (link_buffer_head != link_buffer_tail) {
       unsigned char next_char = link_buffer[link_buffer_tail];
@@ -557,6 +610,7 @@ void main(void) {
   }
 
   setup_fonts();
+  term_clear_screen();
 
   DISPLAY_ON;
 
