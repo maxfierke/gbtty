@@ -44,6 +44,7 @@ uint8_t trigger_clear_screen = 0;
 #define TERM_MAX_Y 15
 #define TERM_CSI_ARG_LEN 6
 #define TERM_CSI_ARG_BUFFER_LEN 12  // nnn;mmm;mmmC
+#define TERM_CSI_RESPONSE_LEN 10
 uint8_t term_started = 0;
 uint8_t term_x = TERM_MIN_X;
 uint8_t term_y = TERM_MIN_Y;
@@ -53,15 +54,28 @@ uint8_t term_csi_args[TERM_CSI_ARG_LEN];
 uint8_t term_csi_arg = 0;
 uint8_t term_csi_arg_buffer_idx = 0;
 unsigned char term_csi_arg_buffer[TERM_CSI_ARG_BUFFER_LEN];
+unsigned char term_csi_response[TERM_CSI_RESPONSE_LEN];
+
+uint8_t term_gfx_mode_inverse = 0;
+
+typedef struct term_char_attributes {
+  uint8_t mode;  // TODO: Make this a bit field. Right now it's just inverse.
+} term_char_attributes_t;
 
 unsigned char term_screen[TERM_ROWS][TERM_COLS];
+term_char_attributes_t term_screen_attrs[TERM_ROWS][TERM_COLS];
 
 char line_buffer[20];
 
-#define LINK_BUFFER_SIZE 128
-unsigned char link_buffer[LINK_BUFFER_SIZE];
-volatile uint8_t link_buffer_head = 0;
-volatile uint8_t link_buffer_tail = 0;
+#define LINK_RX_BUFFER_SIZE 128
+unsigned char link_rx_buffer[LINK_RX_BUFFER_SIZE];
+volatile uint8_t link_rx_buffer_head = 0;
+volatile uint8_t link_rx_buffer_tail = 0;
+
+#define LINK_TX_BUFFER_SIZE 32
+unsigned char link_tx_buffer[LINK_TX_BUFFER_SIZE];
+volatile uint8_t link_tx_buffer_head = 0;
+volatile uint8_t link_tx_buffer_tail = 0;
 
 // Drawing & Themes
 font_t title_font, term_console_font, invert_min_font;
@@ -138,23 +152,39 @@ palette_color_t* palettes[] = {
     paletteDusk,       paletteSunrise,    paletteWhiteHC,   paletteBlackHC};
 const uint8_t themeCount = sizeof palettes / sizeof palettes[0];
 
+void link_port_write(unsigned char data) {
+  uint8_t next_head = (link_tx_buffer_head + 1) % LINK_TX_BUFFER_SIZE;
+  if (next_head != link_tx_buffer_tail) {
+    link_tx_buffer[link_tx_buffer_head] = data;
+    link_tx_buffer_head = next_head;
+  }
+}
+
 void link_port_interrupt(void) {
   uint8_t data = SB_REG;
 
-  uint8_t next_head = (link_buffer_head + 1) % LINK_BUFFER_SIZE;
-  if (next_head != link_buffer_tail) {
-    link_buffer[link_buffer_head] = data;
-    link_buffer_head = next_head;
+  if (data != TERM_SYN_IDLE) {
+    uint8_t next_head = (link_rx_buffer_head + 1) % LINK_RX_BUFFER_SIZE;
+    if (next_head != link_rx_buffer_tail) {
+      link_rx_buffer[link_rx_buffer_head] = data;
+      link_rx_buffer_head = next_head;
+    }
   }
 
-  SB_REG = TERM_ACK;
+  if (link_tx_buffer_head != link_tx_buffer_tail) {
+    unsigned char next_char = link_tx_buffer[link_tx_buffer_tail];
+    link_tx_buffer_tail = (link_tx_buffer_tail + 1) % LINK_TX_BUFFER_SIZE;
+    SB_REG = next_char;
+  } else {
+    SB_REG = TERM_ACK;
+  }
   SC_REG = SIOF_CLOCK_EXT | SIOF_XFER_START;
 }
 
 void init_link_port(void) {
   CRITICAL { add_SIO(link_port_interrupt); }
 
-  SB_REG = TERM_SYN_IDLE;
+  SB_REG = TERM_ACK;
 
   // Set to external clock, we're not drivin' this thing
   SC_REG = SIOF_CLOCK_EXT | SIOF_XFER_START;
@@ -201,6 +231,7 @@ void term_clear_screen(void) {
   for (uint8_t row = 0; row < TERM_ROWS; row++) {
     for (uint8_t col = 0; col < TERM_COLS; col++) {
       term_screen[row][col] = '\0';
+      term_screen_attrs[row][col].mode = 0;
     }
   }
 }
@@ -270,13 +301,68 @@ void term_consume_csi_arg_buffer(void) {
 void term_reset_csi(void) {
   memset(term_csi_args, 0, TERM_CSI_ARG_LEN);
   memset(term_csi_arg_buffer, 0, TERM_CSI_ARG_BUFFER_LEN);
+  memset(term_csi_response, 0, TERM_CSI_RESPONSE_LEN);
+
   term_csi = 0;
   term_csi_arg = 0;
   term_csi_arg_buffer_idx = 0;
 }
 
+void term_queue_csi_response(void) {
+  for (uint8_t i = 0; i < TERM_CSI_RESPONSE_LEN; i++) {
+    if (!term_csi_response[i]) break;
+    link_port_write(term_csi_response[i]);
+  }
+}
+
 void term_handle_csi_char(unsigned char cur_char) {
   switch (cur_char) {
+    case 'c':
+      term_consume_csi_arg_buffer();
+
+      sprintf(term_csi_response, "\x1B[?6c");  // Identify as VT102
+
+      term_queue_csi_response();
+
+      term_reset_csi();
+      break;
+    case 'm':  // Graphics mode
+      term_consume_csi_arg_buffer();
+
+      switch (term_csi_args[0]) {
+        case 0:
+          term_gfx_mode_inverse = 0;
+          break;
+        case 7:
+          term_gfx_mode_inverse = 1;
+          break;
+        case 27:
+          term_gfx_mode_inverse = 0;
+          break;
+      }
+
+      term_reset_csi();
+      break;
+    case 'n':  // Reporting
+      term_consume_csi_arg_buffer();
+
+      switch (term_csi_args[0]) {
+        case 5:  // Status Report
+          sprintf(term_csi_response, "\x1B[0n");
+          break;
+        case 6:  // Cursor report
+          sprintf(term_csi_response, "\x1B[%d;%dR", term_y, term_x);
+          break;
+        default:
+          // Unknown/unsupported
+          term_reset_csi();
+          return;
+      }
+
+      term_queue_csi_response();
+
+      term_reset_csi();
+      break;
     case 'A':  // Cursor up (n=1)
       term_consume_csi_arg_buffer();
 
@@ -454,6 +540,11 @@ void term_handle_csi_char(unsigned char cur_char) {
 }
 
 void term_handle_link_byte(unsigned char cur_char) {
+  if (term_csi) {
+    term_handle_csi_char(cur_char);
+    return;
+  }
+
   switch (cur_char) {
     case '\0':
     case 0xFF:
@@ -500,21 +591,15 @@ void term_handle_link_byte(unsigned char cur_char) {
       // Tabs = spaces here. We're working with 20x18!
       cur_char = ' ';
       break;
-    default:
-      if (term_csi) {
-        term_handle_csi_char(cur_char);
-        return;
-      }
+  }
 
-      // Skip unprintable characters
-      if (cur_char < ' ' || cur_char > (unsigned char)0x7F) {
-        return;
-      }
-
-      break;
+  // Skip unprintable characters
+  if (cur_char < ' ' || cur_char > (unsigned char)0x7F) {
+    return;
   }
 
   term_screen[term_y][term_x] = cur_char;
+  term_screen_attrs[term_y][term_x].mode = term_gfx_mode_inverse;
   term_x++;
 
   if (term_x > TERM_MAX_X) {
@@ -534,11 +619,12 @@ void draw_term_state(void) {
     print_str_at(line_buffer, 1, 16, invert_min_font);
   }
 
-  sprintf(line_buffer, "%hx %hx %hx %hx",
-          (uint8_t)link_buffer[(link_buffer_head - 3) % LINK_BUFFER_SIZE],
-          (uint8_t)link_buffer[(link_buffer_head - 2) % LINK_BUFFER_SIZE],
-          (uint8_t)link_buffer[(link_buffer_head - 1) % LINK_BUFFER_SIZE],
-          (uint8_t)link_buffer[link_buffer_head]);
+  sprintf(
+      line_buffer, "%hx %hx %hx %hx",
+      (uint8_t)link_rx_buffer[(link_rx_buffer_head - 3) % LINK_RX_BUFFER_SIZE],
+      (uint8_t)link_rx_buffer[(link_rx_buffer_head - 2) % LINK_RX_BUFFER_SIZE],
+      (uint8_t)link_rx_buffer[(link_rx_buffer_head - 1) % LINK_RX_BUFFER_SIZE],
+      (uint8_t)link_rx_buffer[link_rx_buffer_head]);
   print_str_at(line_buffer, 8, 16, invert_min_font);
 }
 
@@ -548,9 +634,10 @@ void draw(void) {
     print_str_at("GBTTY", 8, 1, title_font);
     print_str_at("START to begin", 3, 12, invert_min_font);
   } else {
-    for (uint8_t row = TERM_MIN_Y; row < TERM_MAX_Y; row++) {
-      for (uint8_t col = TERM_MIN_X; col < TERM_MAX_X; col++) {
-        if (row == term_y && col == term_x) {
+    for (uint8_t row = TERM_MIN_Y; row <= TERM_MAX_Y; row++) {
+      for (uint8_t col = TERM_MIN_X; col <= TERM_MAX_X; col++) {
+        if ((row == term_y && col == term_x) ||
+            term_screen_attrs[row][col].mode) {
           print_char_at(term_screen[row][col], col, row, invert_min_font);
         } else {
           print_char_at(term_screen[row][col], col, row, term_console_font);
@@ -589,9 +676,9 @@ void update(void) {
   }
 
   if (term_started) {
-    while (link_buffer_head != link_buffer_tail) {
-      unsigned char next_char = link_buffer[link_buffer_tail];
-      link_buffer_tail = (link_buffer_tail + 1) % LINK_BUFFER_SIZE;
+    while (link_rx_buffer_head != link_rx_buffer_tail) {
+      unsigned char next_char = link_rx_buffer[link_rx_buffer_tail];
+      link_rx_buffer_tail = (link_rx_buffer_tail + 1) % LINK_RX_BUFFER_SIZE;
       term_handle_link_byte(next_char);
     }
   }

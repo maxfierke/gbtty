@@ -10,7 +10,7 @@ ifndef GBDK_HOME
 endif
 
 LCC = $(GBDK_HOME)/bin/lcc
-LCCFLAGS ?= -Wm-yn"GBTTY" -Wm-yc -Wl-yt0x1B -Wl-ya1 -Wm-yj
+LCCFLAGS ?= -Wm-yn"GBTTY" -Wm-yc -Wl-yt0x1B -Wl-ya1 -Wm-yj -Wf--std-c23
 
 # GBDK_DEBUG = ON
 ifdef GBDK_DEBUG
