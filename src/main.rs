@@ -7,6 +7,8 @@
 #![allow(static_mut_refs)]
 
 use bsp::entry;
+use defmt::*;
+use defmt_rtt as _;
 use rp2040_panic_usb_boot as _;
 
 use heapless::spsc::{Producer, Queue};
@@ -14,7 +16,10 @@ use usb_device::{
     bus::UsbBusAllocator,
     device::{StringDescriptors, UsbDevice, UsbDeviceBuilder, UsbVidPid},
 };
-use usbd_serial::{embedded_io::Write, SerialPort};
+use usbd_serial::{
+    embedded_io::{Read, Write},
+    SerialPort,
+};
 
 #[cfg(feature = "rp-pico")]
 pub use rp_pico as bsp;
@@ -44,10 +49,14 @@ static mut USB_BUS: Option<UsbBusAllocator<bsp::hal::usb::UsbBus>> = None;
 /// The USB Serial Device Driver (shared with the interrupt).
 static mut USB_SERIAL: Option<SerialPort<bsp::hal::usb::UsbBus>> = None;
 
-/// Link port TX queue
+/// Link port TX queue writer
 static mut LINK_PORT_BUFFER_WRITER: Option<Producer<'_, u8>> = None;
 
-static LINK_PORT_CLOCK_HZ: u32 = 262144; // ~32KB/s on normal speed
+const LINK_PORT_CLOCK_HZ: u32 = 262144; // ~32KB/s on normal speed
+
+const LINK_PORT_ACK: u8 = 0x6;
+
+const LINK_PORT_SYN_IDLE: u8 = 0x16;
 
 #[entry]
 fn main() -> ! {
@@ -66,6 +75,8 @@ fn main() -> ! {
     )
     .ok()
     .unwrap();
+
+    let clock_cycles_per_ms = clocks.system_clock.freq().to_Hz() / 1000;
 
     let pins = bsp::Pins::new(
         pac.IO_BANK0,
@@ -170,23 +181,60 @@ fn main() -> ! {
         match link_port_queue_reader.peek() {
             None => {
                 let _ = active_link_port.flush();
-                cortex_m::asm::wfi();
+                let idle = [LINK_PORT_SYN_IDLE];
+                match active_link_port.write(&idle) {
+                    Ok(_) => {
+                        let mut resp = [0u8];
+                        match active_link_port.read(&mut resp) {
+                            Ok(1) => match resp[0] {
+                                LINK_PORT_SYN_IDLE | LINK_PORT_ACK | 0x00 | 0xFF => {
+                                    // Let's both twiddle our thumbs in silence
+                                }
+                                _ => match unsafe { USB_SERIAL.as_mut().unwrap() }.write(&resp) {
+                                    Ok(_) => {}
+                                    Err(_) => {
+                                        error!("unable to enqueue to serial port")
+                                    }
+                                },
+                            },
+                            Ok(_) => {}
+                            Err(_) => error!("pio error reading from link port"),
+                        }
+                    }
+                    Err(_err) => error!("unable to write SYN_IDLE to link port"),
+                }
             }
             Some(ch) => {
-                let buf: [u8; 1] = [*ch];
-                match active_link_port.write(&buf[..1]) {
+                let buf = [*ch];
+                match active_link_port.write(&buf) {
                     Ok(_) => {
                         let _ = link_port_queue_reader.dequeue();
+
+                        let mut resp = [0u8];
+                        match active_link_port.read(&mut resp) {
+                            Ok(1) => {
+                                match resp[0] {
+                                    LINK_PORT_SYN_IDLE | LINK_PORT_ACK | 0x00 | 0xFF => {
+                                        // Let's both twiddle our thumbs in silence
+                                    }
+                                    _ => {
+                                        match unsafe { USB_SERIAL.as_mut().unwrap() }.write(&resp) {
+                                            Ok(_) => {}
+                                            Err(_) => error!("unable to enqueue to serial port"),
+                                        }
+                                    }
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(_) => error!("pio error reading from link port"),
+                        }
                     }
-                    Err(_err) => {
-                        // TODO: Log something?
-                    }
+                    Err(_err) => error!("unable to write byte from queue to link port"),
                 }
             }
         }
 
-        // TODO: Send ENQ/WRU?
-        // TODO: Read 0x55/0x66 for flow control?
+        cortex_m::asm::delay(clock_cycles_per_ms);
     }
 }
 
@@ -204,37 +252,20 @@ fn USBCTRL_IRQ() {
     let serial = unsafe { USB_SERIAL.as_mut().unwrap() };
     let link_port_queue = unsafe { LINK_PORT_BUFFER_WRITER.as_mut().unwrap() };
 
-    // Poll the USB driver for new serial data
     if usb_dev.poll(&mut [serial]) {
         let mut buf = [0u8; 128];
         match serial.read(&mut buf) {
-            Err(_e) => {
-                // Do nothing
-            }
-            Ok(0) => {
-                // Do nothing
-            }
+            Err(_e) => error!("usb error reading from serial port"),
+            Ok(0) => {}
             Ok(count) => {
                 let mut wr_ptr = &buf[..count];
                 while !wr_ptr.is_empty() {
                     match link_port_queue.enqueue(wr_ptr[0]) {
-                        Err(_) => {
-                            let _ =
-                                serial.write(b"\nWARNING: Unable to write to link port queue\n");
-                        }
-                        Ok(_) => {
-                            // Do nothing. It worked, yay!
-                        }
+                        Err(_) => error!("unable to write byte to link port queue"),
+                        Ok(_) => {}
                     }
 
-                    // Send back to the host for debugging
-                    match serial.write(&wr_ptr[0..1]) {
-                        Ok(len) => wr_ptr = &wr_ptr[len..],
-                        // On error, just drop unwritten data.
-                        // One possible error is Err(WouldBlock), meaning the USB
-                        // write buffer is full.
-                        Err(_) => break,
-                    };
+                    wr_ptr = &wr_ptr[1..];
                 }
             }
         }
