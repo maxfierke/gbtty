@@ -28,8 +28,9 @@ enough to use that.
 # Current status
 
 The software side of things is _mostly_ working for basic printing and support
-for cursor movement escape codes. It's currently setup to compile and run on the
-Waveshare RP2040-Zero and configured to run on [this pico-gb-printer board](https://github.com/Raphael-Boichot/Collection-of-PCB-for-Game-Boy-Printer-Emulators/tree/main#game-boy-printer-emulator-pcb-for-the-waveshare-rp2040-zero)
+for cursor movement, cursor reporting, and a few other CSI sequences. It's
+currently setup to compile and run on the Waveshare RP2040-Zero and configured
+to run on [this pico-gb-printer board](https://github.com/Raphael-Boichot/Collection-of-PCB-for-Game-Boy-Printer-Emulators/tree/main#game-boy-printer-emulator-pcb-for-the-waveshare-rp2040-zero)
 as I happened to have a couple of these, but should be configurable to run on
 other similar boards by remapping the GPIOs & swapping the BSP crate.
 
