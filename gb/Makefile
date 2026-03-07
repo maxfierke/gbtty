@@ -1,3 +1,10 @@
+SHELL := bash
+.ONESHELL:
+.SHELLFLAGS := -eu -o pipefail -c
+.DELETE_ON_ERROR:
+MAKEFLAGS += --warn-undefined-variables
+MAKEFLAGS += --no-builtin-rules
+
 #
 # A Makefile that compiles all .c and .s files in "src" and "res"
 # subdirectories and places the output in a "obj" subdirectory
@@ -7,6 +14,13 @@
 # to match your GBDK root directory (ex: GBDK_HOME = "C:/GBDK/")
 ifndef GBDK_HOME
 	GBDK_HOME = ../../../
+endif
+
+PLATFORM := $(uname -s)
+
+SAMEBOY := sameboy
+ifeq ($(PLATFORM),Darwin)
+  override SAMEBOY=Sameboy
 endif
 
 LCC = $(GBDK_HOME)/bin/lcc
@@ -62,5 +76,5 @@ clean:
 #	rm -f  *.gb *.ihx *.cdb *.adb *.noi *.map
 	rm -f  $(OBJDIR)/*.*
 
-dev:
-	make && (killall SameBoy || true) && open $(OBJDIR)/$(PROJECTNAME).gb
+dev: prepare $(BINS)
+	(killall $(SAMEBOY) || true) && $(SAMEBOY) $(OBJDIR)/$(PROJECTNAME).gb
