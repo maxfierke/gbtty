@@ -190,12 +190,15 @@ fn main() -> ! {
                                 LINK_PORT_SYN_IDLE | LINK_PORT_ACK | 0x00 | 0xFF => {
                                     // Let's both twiddle our thumbs in silence
                                 }
-                                _ => match unsafe { USB_SERIAL.as_mut().unwrap() }.write(&resp) {
-                                    Ok(_) => {}
-                                    Err(_) => {
-                                        error!("unable to enqueue to serial port")
+                                _ => {
+                                    // SAFETY: While not totally safe, we're only writing from
+                                    // here and reading in the interrupt. R/W buffers are seperate.
+                                    // USB Bus is mutexed. It's fine for now :shruggie:
+                                    let serial = unsafe { USB_SERIAL.as_mut().unwrap() };
+                                    if serial.write(&resp).is_err() {
+                                        error!("unable to enqueue to serial port");
                                     }
-                                },
+                                }
                             },
                             Ok(_) => {}
                             Err(_) => error!("pio error reading from link port"),
@@ -218,9 +221,12 @@ fn main() -> ! {
                                         // Let's both twiddle our thumbs in silence
                                     }
                                     _ => {
-                                        match unsafe { USB_SERIAL.as_mut().unwrap() }.write(&resp) {
-                                            Ok(_) => {}
-                                            Err(_) => error!("unable to enqueue to serial port"),
+                                        // SAFETY: While not totally safe, we're only writing from
+                                        // here and reading in the interrupt. R/W buffers are seperate.
+                                        // USB Bus is mutexed. It's fine for now :shruggie:
+                                        let serial = unsafe { USB_SERIAL.as_mut().unwrap() };
+                                        if serial.write(&resp).is_err() {
+                                            error!("unable to enqueue to serial port");
                                         }
                                     }
                                 }
@@ -258,14 +264,10 @@ fn USBCTRL_IRQ() {
             Err(_e) => error!("usb error reading from serial port"),
             Ok(0) => {}
             Ok(count) => {
-                let mut wr_ptr = &buf[..count];
-                while !wr_ptr.is_empty() {
-                    match link_port_queue.enqueue(wr_ptr[0]) {
-                        Err(_) => error!("unable to write byte to link port queue"),
-                        Ok(_) => {}
+                for byte in &buf[..count] {
+                    if link_port_queue.enqueue(*byte).is_err() {
+                        error!("unable to write byte to link port queue");
                     }
-
-                    wr_ptr = &wr_ptr[1..];
                 }
             }
         }
