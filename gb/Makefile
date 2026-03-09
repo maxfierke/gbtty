@@ -16,11 +16,12 @@ ifndef GBDK_HOME
 	GBDK_HOME = ../../../
 endif
 
-PLATFORM := $(uname -s)
-
-SAMEBOY := sameboy
+PLATFORM = $(shell uname -s)
+SAMEBOY = sameboy
+SAMEBOY_OPEN = $(SAMEBOY)
 ifeq ($(PLATFORM),Darwin)
   override SAMEBOY=Sameboy
+  override SAMEBOY_OPEN=open -a $(SAMEBOY)
 endif
 
 LCC = $(GBDK_HOME)/bin/lcc
@@ -77,4 +78,4 @@ clean:
 	rm -f  $(OBJDIR)/*.*
 
 dev: prepare $(BINS)
-	(killall $(SAMEBOY) || true) && $(SAMEBOY) $(OBJDIR)/$(PROJECTNAME).gb
+	(killall $(SAMEBOY) || true) && $(SAMEBOY_OPEN) $(OBJDIR)/$(PROJECTNAME).gb
