@@ -288,23 +288,20 @@ static void term_handle_csi_char(term_state_t* term, unsigned char cur_char) {
     case 'K':  // Erase in line (n=0)
       term_consume_csi_arg_buffer(term);
 
-      if (term->csi_state->args[0] == 0) {  // Clear to end of screen
-        for (uint8_t j = term->y; j < TERM_ROWS; j++) {
-          for (uint8_t i = 0; i < TERM_COLS; i++) {
-            if (j == term->y && i < term->x) continue;
-            term->screen[j][i] = ' ';
-          }
+      if (term->csi_state->args[0] == 0) {  // Clear to end of line
+        for (uint8_t i = term->x; i < TERM_COLS; i++) {
+          term->screen[term->y][i] = ' ';
         }
       } else if (term->csi_state->args[0] == 1) {
-        // Clear from cursor to beginning of screen
-        for (uint8_t j = 0; j <= term->y; j++) {
-          for (uint8_t i = 0; i < TERM_COLS; i++) {
-            if (j == term->y && i > term->x) continue;
-            term->screen[j][i] = ' ';
-          }
+        // Clear from cursor to beginning of line
+        for (uint8_t i = 0; i < term->x; i++) {
+          term->screen[term->y][i] = ' ';
         }
       } else if (term->csi_state->args[0] >= 2) {
-        term_clear_screen(term);
+        // Clear whole line
+        for (uint8_t i = 0; i < TERM_COLS; i++) {
+          term->screen[term->y][i] = ' ';
+        }
       }
 
       term_reset_csi(term);
