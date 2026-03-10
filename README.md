@@ -55,3 +55,9 @@ Public License Version 3, so the same license applies.
 # Disclaimer
 
 Game Boy™ is a trademark of Nintendo of America Inc.
+
+# Useful resources
+
+- [How Terminals Work](https://how-terminals-work.vercel.app/) - Interactive look at how ANSI terminals function (VT100 and xterm derivatives especially)
+- [vt100.net/emu/](https://vt100.net/emu/) - Paul Flo Williams' tome on terminal emulation
+- [Everything you never wanted to know about ANSI escape codes](https://notes.burke.libbey.me/ansi-escape-codes/)
