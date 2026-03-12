@@ -16,9 +16,15 @@
 #define TERM_CSI_ARG_BUFFER_LEN 12  // nnn;mmm;mmmC
 #define TERM_CSI_RESPONSE_LEN 10
 
-typedef struct term_char_attributes {
-  uint8_t mode;  // TODO: Make this a bit field. Right now it's just inverse.
-} term_char_attributes_t;
+typedef enum term_sgr_mode {
+  TERM_SGR_DEFAULT,
+  TERM_SGR_INVERSE,
+} term_sgr_mode_t;
+
+typedef struct term_cell {
+  unsigned char ch;
+  term_sgr_mode_t mode;
+} term_cell_t;
 
 typedef struct {
   uint8_t enabled;
@@ -36,13 +42,13 @@ typedef struct {
   uint8_t esc;
   uint8_t csi;
   term_csi_state_t* csi_state;
-  unsigned char screen[TERM_ROWS][TERM_COLS];
-  term_char_attributes_t screen_attrs[TERM_ROWS][TERM_COLS];
+  term_cell_t cells[TERM_ROWS][TERM_COLS];
 } term_state_t;
 
 extern uint8_t term_gfx_mode_inverse;
 
 void term_init(term_state_t* term);
+inline void term_clear_cell(term_state_t* term, uint8_t x, uint8_t y);
 void term_clear_screen(term_state_t* term);
 inline void term_cursor_up(term_state_t* term);
 inline void term_cursor_down(term_state_t* term);

@@ -11,16 +11,16 @@ void term_init(term_state_t* term) {
   term->csi_state = malloc(sizeof(term_csi_state_t));
 }
 
+inline void term_clear_cell(term_state_t* term, uint8_t x, uint8_t y) {
+  term->cells[x][y].ch = '\0';
+  term->cells[x][y].mode = TERM_SGR_DEFAULT;
+}
+
 void term_clear_screen(term_state_t* term) {
   term->x = TERM_MIN_X;
   term->y = TERM_MIN_Y;
 
-  for (uint8_t row = 0; row < TERM_ROWS; row++) {
-    for (uint8_t col = 0; col < TERM_COLS; col++) {
-      term->screen[row][col] = '\0';
-      term->screen_attrs[row][col].mode = 0;
-    }
-  }
+  memset(term->cells, 0, sizeof(term_cell_t) * TERM_ROWS * TERM_COLS);
 }
 
 static void term_advance_line(term_state_t* term) {
@@ -245,19 +245,18 @@ static void term_handle_csi_char(term_state_t* term, unsigned char cur_char) {
       if (!term->csi_state->args[0]) {
         term->csi_state->args[0] = 1;
       }
-      if (term->csi_state->args[0] > TERM_MAX_X) {
-        term->csi_state->args[0] = TERM_MAX_X;
+      if (term->csi_state->args[0] > TERM_MAX_Y) {
+        term->csi_state->args[0] = TERM_MAX_Y;
+      }
+      if (term->csi_state->args[1] > TERM_MAX_X) {
+        term->csi_state->args[1] = TERM_MAX_X;
       }
       if (!term->csi_state->args[1]) {
         term->csi_state->args[1] = 1;
       }
 
-      if (term->csi_state->args[1] > TERM_MAX_Y) {
-        term->csi_state->args[1] = TERM_MAX_Y;
-      }
-
-      term->x = term->csi_state->args[0];
-      term->y = term->csi_state->args[1];
+      term->y = term->csi_state->args[0];
+      term->x = term->csi_state->args[1];
 
       term_reset_csi(term);
       break;
@@ -268,7 +267,7 @@ static void term_handle_csi_char(term_state_t* term, unsigned char cur_char) {
         for (uint8_t j = term->y; j < TERM_ROWS; j++) {
           for (uint8_t i = 0; i < TERM_COLS; i++) {
             if (j == term->y && i < term->x) continue;
-            term->screen[j][i] = ' ';
+            term_clear_cell(term, i, j);
           }
         }
       } else if (term->csi_state->args[0] == 1) {
@@ -276,7 +275,7 @@ static void term_handle_csi_char(term_state_t* term, unsigned char cur_char) {
         for (uint8_t j = 0; j <= term->y; j++) {
           for (uint8_t i = 0; i < TERM_COLS; i++) {
             if (j == term->y && i > term->x) continue;
-            term->screen[j][i] = ' ';
+            term_clear_cell(term, i, j);
           }
         }
       } else if (term->csi_state->args[0] >= 2) {
@@ -290,17 +289,17 @@ static void term_handle_csi_char(term_state_t* term, unsigned char cur_char) {
 
       if (term->csi_state->args[0] == 0) {  // Clear to end of line
         for (uint8_t i = term->x; i < TERM_COLS; i++) {
-          term->screen[term->y][i] = ' ';
+          term_clear_cell(term, i, term->y);
         }
       } else if (term->csi_state->args[0] == 1) {
         // Clear from cursor to beginning of line
         for (uint8_t i = 0; i < term->x; i++) {
-          term->screen[term->y][i] = ' ';
+          term_clear_cell(term, i, term->y);
         }
       } else if (term->csi_state->args[0] >= 2) {
         // Clear whole line
         for (uint8_t i = 0; i < TERM_COLS; i++) {
-          term->screen[term->y][i] = ' ';
+          term_clear_cell(term, i, term->y);
         }
       }
 
@@ -350,12 +349,12 @@ void term_handle_link_byte(term_state_t* term, unsigned char cur_char) {
     case 0x7F:  // DEL
 
       if (term->x > 1) {  // Current line
-        // Blank out cursor
-        term->screen[term->y][term->x] = ' ';
+        // Blank out current char
+        term_clear_cell(term, term->x, term->y);
         term->x--;
       } else {  // Reverse wrap
-        // Blank out cursor
-        term->screen[term->y][term->x] = ' ';
+        // Blank out current char
+        term_clear_cell(term, term->x, term->y);
         term->x = TERM_MAX_X;
         term->y--;
       }
@@ -379,8 +378,8 @@ void term_handle_link_byte(term_state_t* term, unsigned char cur_char) {
     return;
   }
 
-  term->screen[term->y][term->x] = cur_char;
-  term->screen_attrs[term->y][term->x].mode = term_gfx_mode_inverse;
+  term->cells[term->y][term->x].ch = cur_char;
+  term->cells[term->y][term->x].mode = TERM_SGR_INVERSE;
   term->x++;
 
   if (term->x > TERM_MAX_X) {

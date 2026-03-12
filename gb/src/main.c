@@ -24,56 +24,56 @@ uint8_t keys = 0;
 #define NO_KEYS_PRESSED() keys == 0
 
 // Globals
-uint8_t theme_index = 0;
-uint8_t trigger_clear_screen = 0;
-
 char line_buffer[20];
-
-// Drawing & Themes
-font_t title_font, term_console_font, invert_min_font;
+font_t term_console_font;
 
 void setup_fonts(void) {
   font_init();
-  font_color(0, 3);
-  term_console_font = font_load(font_ibm);
-
   if (DEVICE_SUPPORTS_COLOR) {
-    font_color(2, 3);
+    font_color(0, 1);
   } else {
-    font_color(0, 3);
+    font_color(DMG_WHITE, DMG_BLACK);
   }
-  title_font = font_load(font_ibm);
-
-  if (DEVICE_SUPPORTS_COLOR) {
-    font_color(1, 2);
-  } else {
-    font_color(3, 0);
-  }
-  invert_min_font = font_load(font_min);
+  term_console_font = font_load(font_ibm_fixed);
 }
 
-void print_str_at(char str[], uint8_t x, uint8_t y, font_t font) {
-  font_set(font);
-  gotoxy(x, y);
-  printf(str);
+void print_char_at(char ch, uint8_t x, uint8_t y, font_t font,
+                   term_sgr_mode_t mode) {
+  pmfont_handle font_tiles = (pmfont_handle)font;
+  set_bkg_tile_xy(x, y, font_tiles->first_tile + (uint8_t)ch);
+
+  if (DEVICE_SUPPORTS_COLOR) {
+    if (mode == TERM_SGR_INVERSE) {
+      set_bkg_attribute_xy(x, y, 1);
+    } else {
+      set_bkg_attribute_xy(x, y, 0);
+    }
+  } else {
+    // TODO: Determine how to support invert on DMG/GBP
+  }
 }
 
-void print_char_at(char ch, uint8_t x, uint8_t y, font_t font) {
-  font_set(font);
-  gotoxy(x, y);
-  setchar(ch);
+void print_str_at(char str[], uint8_t x, uint8_t y, font_t font,
+                  term_sgr_mode_t mode) {
+  uint8_t i = 0;
+
+  while (str[i] != '\0') {
+    if (x + i > TERM_MAX_X) break;
+    print_char_at(str[i], x + i, y, font, mode);
+    i++;
+  }
 }
 
 void draw_term_state(term_state_t* term) {
   if (!term->esc && !term->csi) {
-    print_str_at("   ", 1, 16, term_console_font);
+    print_str_at("   ", 1, 16, term_console_font, TERM_SGR_DEFAULT);
   } else if (term->esc && !term->csi) {
-    print_str_at("ESC", 1, 16, invert_min_font);
+    print_str_at("ESC", 1, 16, term_console_font, TERM_SGR_INVERSE);
   } else if (term->csi && !term->csi_state->args[0]) {
-    print_str_at("CSI", 1, 16, invert_min_font);
+    print_str_at("CSI", 1, 16, term_console_font, TERM_SGR_INVERSE);
   } else if (term->csi) {
     sprintf(line_buffer, "^[[%s", (unsigned char*)term->csi_state->arg_buffer);
-    print_str_at(line_buffer, 1, 16, invert_min_font);
+    print_str_at(line_buffer, 1, 16, term_console_font, TERM_SGR_INVERSE);
   }
 
   sprintf(
@@ -82,22 +82,23 @@ void draw_term_state(term_state_t* term) {
       (uint8_t)link_rx_buffer[(link_rx_buffer_head - 2) % LINK_RX_BUFFER_SIZE],
       (uint8_t)link_rx_buffer[(link_rx_buffer_head - 1) % LINK_RX_BUFFER_SIZE],
       (uint8_t)link_rx_buffer[link_rx_buffer_head]);
-  print_str_at(line_buffer, 8, 16, invert_min_font);
+  print_str_at(line_buffer, 8, 16, term_console_font, TERM_SGR_INVERSE);
 }
 
 // Main Loop
 void draw(term_state_t* term) {
   if (!term->started) {
-    print_str_at("GBTTY", 8, 1, title_font);
-    print_str_at("START to begin", 3, 12, invert_min_font);
+    print_str_at("GBTTY", 8, 1, term_console_font, TERM_SGR_DEFAULT);
+    print_str_at("START to begin", 3, 12, term_console_font, TERM_SGR_INVERSE);
   } else {
     for (uint8_t row = TERM_MIN_Y; row <= TERM_MAX_Y; row++) {
       for (uint8_t col = TERM_MIN_X; col <= TERM_MAX_X; col++) {
-        if ((row == term->y && col == term->x) ||
-            term->screen_attrs[row][col].mode) {
-          print_char_at(term->screen[row][col], col, row, invert_min_font);
+        if ((row == term->y && col == term->x) || term->cells[row][col].mode) {
+          print_char_at(term->cells[row][col].ch, col, row, term_console_font,
+                        TERM_SGR_INVERSE);
         } else {
-          print_char_at(term->screen[row][col], col, row, term_console_font);
+          print_char_at(term->cells[row][col].ch, col, row, term_console_font,
+                        TERM_SGR_DEFAULT);
         }
       }
     }
@@ -150,7 +151,8 @@ void main(void) {
   SPRITES_8x8;
 
   if (DEVICE_SUPPORTS_COLOR) {
-    set_bkg_palette(0, 1, palettes[theme_index]);
+    set_bkg_palette(0, 1, palettePurple);
+    set_bkg_palette(1, 1, paletteInvertPurple);
   }
 
   setup_fonts();
