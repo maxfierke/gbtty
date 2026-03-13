@@ -23,16 +23,19 @@ uint8_t keys = 0;
 #define KEY_RELEASED(K) (!(keys & (K)) && (previous_keys & (K)))
 #define NO_KEYS_PRESSED() keys == 0
 
+#define DMG_CURSOR_SPRITE 0
+
 // Globals
+uint8_t cursor_tile[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 char line_buffer[20];
 font_t term_console_font;
 
 void setup_fonts(void) {
   font_init();
   if (DEVICE_SUPPORTS_COLOR) {
-    font_color(0, 1);
+    font_color(1, 2);
   } else {
-    font_color(DMG_WHITE, DMG_BLACK);
+    font_color(1, 2);
   }
   term_console_font = font_load(font_ibm_fixed);
 }
@@ -102,6 +105,11 @@ void draw(term_state_t* term) {
         }
       }
     }
+
+    if (!DEVICE_SUPPORTS_COLOR) {
+      set_sprite_1bpp_data(0, 1, cursor_tile);
+      move_sprite(DMG_CURSOR_SPRITE, (term->x * 8) + 8, (term->y * 8) + 16);
+    }
   }
 
   draw_term_state(term);
@@ -153,6 +161,10 @@ void main(void) {
   if (DEVICE_SUPPORTS_COLOR) {
     set_bkg_palette(0, 1, palettePurple);
     set_bkg_palette(1, 1, paletteInvertPurple);
+  } else {
+    BGP_REG = DMG_PALETTE(DMG_BLACK, DMG_WHITE, DMG_BLACK, DMG_DARK_GRAY);
+    OBP0_REG = DMG_PALETTE(DMG_WHITE, DMG_BLACK, DMG_WHITE, DMG_DARK_GRAY);
+    hide_sprite(DMG_CURSOR_SPRITE);
   }
 
   setup_fonts();
