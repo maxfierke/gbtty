@@ -379,7 +379,7 @@ void term_handle_link_byte(term_state_t* term, unsigned char cur_char) {
   }
 
   term->cells[term->y][term->x].ch = cur_char;
-  term->cells[term->y][term->x].mode = TERM_SGR_INVERSE;
+  term->cells[term->y][term->x].mode = term_gfx_mode_inverse;
   term->x++;
 
   if (term->x > TERM_MAX_X) {

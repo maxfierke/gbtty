@@ -32,11 +32,7 @@ font_t term_console_font;
 
 void setup_fonts(void) {
   font_init();
-  if (DEVICE_SUPPORTS_COLOR) {
-    font_color(1, 2);
-  } else {
-    font_color(1, 2);
-  }
+  font_color(1, 2);
   term_console_font = font_load(font_ibm_fixed);
 }
 
