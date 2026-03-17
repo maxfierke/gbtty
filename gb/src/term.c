@@ -12,8 +12,8 @@ void term_init(term_state_t* term) {
 }
 
 inline void term_clear_cell(term_state_t* term, uint8_t x, uint8_t y) {
-  term->cells[x][y].ch = '\0';
-  term->cells[x][y].mode = TERM_SGR_DEFAULT;
+  term->cells[y][x].ch = '\0';
+  term->cells[y][x].mode = TERM_SGR_DEFAULT;
 }
 
 void term_clear_screen(term_state_t* term) {
