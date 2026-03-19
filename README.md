@@ -49,8 +49,8 @@ The PCB (contents of `pcb/`) is licensed under
 [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-nc-sa/4.0/). **Commercial uses are strictly prohibited.**
 
 The terminal emulator ROM itself (contents of the `gb/` directory) is derived
-from orangeglo's Better Button Test, which is licensed under the GNU General
-Public License Version 3, so the same license applies.
+from orangeglo's Better Button Test, which is licensed under the [GNU General
+Public License Version 3](gb/LICENSE), so the same license applies.
 
 # Disclaimer
 

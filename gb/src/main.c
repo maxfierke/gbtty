@@ -1,14 +1,13 @@
 #include <gb/cgb.h>
 #include <gb/crash_handler.h>
 #include <gb/gb.h>
-#include <gbdk/console.h>
-#include <gbdk/font.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "link.h"
+#include "oldschool_cga_8x8.h"
 #include "palettes.h"
 #include "term.h"
 
@@ -23,23 +22,22 @@ uint8_t keys = 0;
 #define KEY_RELEASED(K) (!(keys & (K)) && (previous_keys & (K)))
 #define NO_KEYS_PRESSED() keys == 0
 
-#define DMG_CURSOR_SPRITE 0
+#define SPRITE_DMG_CURSOR 0
+
+#define OLDSCHOOL_CGA_8x8_FIRST_TILE 0
 
 // Globals
 uint8_t cursor_tile[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 char line_buffer[20];
-font_t term_console_font;
 
 void setup_fonts(void) {
-  font_init();
-  font_color(1, 2);
-  term_console_font = font_load(font_ibm_fixed);
+  set_1bpp_colors(1, 2);
+  set_bkg_1bpp_data(OLDSCHOOL_CGA_8x8_FIRST_TILE, oldschool_cga_8x8_TILE_COUNT,
+                    oldschool_cga_8x8_tiles);
 }
 
-void print_char_at(char ch, uint8_t x, uint8_t y, font_t font,
-                   term_sgr_mode_t mode) {
-  pmfont_handle font_tiles = (pmfont_handle)font;
-  set_bkg_tile_xy(x, y, font_tiles->first_tile + (uint8_t)ch);
+void print_char_at(char ch, uint8_t x, uint8_t y, term_sgr_mode_t mode) {
+  set_bkg_tile_xy(x, y, OLDSCHOOL_CGA_8x8_FIRST_TILE + (uint8_t)ch);
 
   if (DEVICE_SUPPORTS_COLOR) {
     if (mode == TERM_SGR_INVERSE) {
@@ -52,27 +50,26 @@ void print_char_at(char ch, uint8_t x, uint8_t y, font_t font,
   }
 }
 
-void print_str_at(char str[], uint8_t x, uint8_t y, font_t font,
-                  term_sgr_mode_t mode) {
+void print_str_at(char str[], uint8_t x, uint8_t y, term_sgr_mode_t mode) {
   uint8_t i = 0;
 
   while (str[i] != '\0') {
     if (x + i > TERM_MAX_X) break;
-    print_char_at(str[i], x + i, y, font, mode);
+    print_char_at(str[i], x + i, y, mode);
     i++;
   }
 }
 
 void draw_term_state(term_state_t* term) {
   if (!term->esc && !term->csi) {
-    print_str_at("   ", 1, 16, term_console_font, TERM_SGR_DEFAULT);
+    print_str_at("   ", 1, 16, TERM_SGR_DEFAULT);
   } else if (term->esc && !term->csi) {
-    print_str_at("ESC", 1, 16, term_console_font, TERM_SGR_INVERSE);
+    print_str_at("ESC", 1, 16, TERM_SGR_INVERSE);
   } else if (term->csi && !term->csi_state->args[0]) {
-    print_str_at("CSI", 1, 16, term_console_font, TERM_SGR_INVERSE);
+    print_str_at("CSI", 1, 16, TERM_SGR_INVERSE);
   } else if (term->csi) {
     sprintf(line_buffer, "^[[%s", (unsigned char*)term->csi_state->arg_buffer);
-    print_str_at(line_buffer, 1, 16, term_console_font, TERM_SGR_INVERSE);
+    print_str_at(line_buffer, 1, 16, TERM_SGR_INVERSE);
   }
 
   sprintf(
@@ -81,30 +78,28 @@ void draw_term_state(term_state_t* term) {
       (uint8_t)link_rx_buffer[(link_rx_buffer_head - 2) % LINK_RX_BUFFER_SIZE],
       (uint8_t)link_rx_buffer[(link_rx_buffer_head - 1) % LINK_RX_BUFFER_SIZE],
       (uint8_t)link_rx_buffer[link_rx_buffer_head]);
-  print_str_at(line_buffer, 8, 16, term_console_font, TERM_SGR_INVERSE);
+  print_str_at(line_buffer, 8, 16, TERM_SGR_INVERSE);
 }
 
 // Main Loop
 void draw(term_state_t* term) {
   if (!term->started) {
-    print_str_at("GBTTY", 8, 1, term_console_font, TERM_SGR_DEFAULT);
-    print_str_at("START to begin", 3, 12, term_console_font, TERM_SGR_INVERSE);
+    print_str_at("GBTTY", 8, 1, TERM_SGR_DEFAULT);
+    print_str_at("START to begin", 3, 12, TERM_SGR_INVERSE);
   } else {
     for (uint8_t row = TERM_MIN_Y; row <= TERM_MAX_Y; row++) {
       for (uint8_t col = TERM_MIN_X; col <= TERM_MAX_X; col++) {
         if ((row == term->y && col == term->x) || term->cells[row][col].mode) {
-          print_char_at(term->cells[row][col].ch, col, row, term_console_font,
-                        TERM_SGR_INVERSE);
+          print_char_at(term->cells[row][col].ch, col, row, TERM_SGR_INVERSE);
         } else {
-          print_char_at(term->cells[row][col].ch, col, row, term_console_font,
-                        TERM_SGR_DEFAULT);
+          print_char_at(term->cells[row][col].ch, col, row, TERM_SGR_DEFAULT);
         }
       }
     }
 
     if (!DEVICE_SUPPORTS_COLOR) {
       set_sprite_1bpp_data(0, 1, cursor_tile);
-      move_sprite(DMG_CURSOR_SPRITE, (term->x * 8) + 8, (term->y * 8) + 16);
+      move_sprite(SPRITE_DMG_CURSOR, (term->x * 8) + 8, (term->y * 8) + 16);
     }
   }
 
@@ -160,7 +155,7 @@ void main(void) {
   } else {
     BGP_REG = DMG_PALETTE(DMG_BLACK, DMG_WHITE, DMG_BLACK, DMG_DARK_GRAY);
     OBP0_REG = DMG_PALETTE(DMG_WHITE, DMG_BLACK, DMG_WHITE, DMG_DARK_GRAY);
-    hide_sprite(DMG_CURSOR_SPRITE);
+    hide_sprite(SPRITE_DMG_CURSOR);
   }
 
   setup_fonts();
