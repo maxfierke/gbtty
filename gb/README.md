@@ -12,7 +12,7 @@ As mentioned in the [top-level README](../README.md) for the project, the GB cli
 under the terms of the GNU General Public License Version 3.
 
 It uses elements of other projects licensed under the GNU General Public License
-Version-3, including:
+Version 3 or compatible licenses, including:
 
 - [Better Button Test](https://github.com/orangeglo/better-button-test) by orangelo - original foundation of `src/main.c`, `src/palettes.h`
-- [oldschool-cga-8x8](https://github.com/susam/pcface) by susam - [`res/oldschool-cga-8x8.png`](res/oldschool-cga-8x8.png)
+- [Portfolio 6x8](https://int10h.org/oldschool-pc-fonts/fontlist/font?portfolio_6x8) - bitmap font, based on FON version from [VileR](https://int10h.org/oldschool-pc-fonts/). Originally licensed under CC-BY-SA 4.0. I converted it to 8x8 1bpp tiles, which are a derivative work licensed under GNU General Public License Version 3.

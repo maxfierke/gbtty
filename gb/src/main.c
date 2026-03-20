@@ -7,8 +7,8 @@
 #include <string.h>
 
 #include "link.h"
-#include "oldschool_cga_8x8.h"
 #include "palettes.h"
+#include "portfolio.h"
 #include "term.h"
 
 // Keys
@@ -24,7 +24,7 @@ uint8_t keys = 0;
 
 #define SPRITE_DMG_CURSOR 0
 
-#define OLDSCHOOL_CGA_8x8_FIRST_TILE 0
+#define PORTFOLIO_FIRST_TILE 0
 
 // Globals
 uint8_t cursor_tile[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -32,12 +32,12 @@ char line_buffer[20];
 
 void setup_fonts(void) {
   set_1bpp_colors(1, 2);
-  set_bkg_1bpp_data(OLDSCHOOL_CGA_8x8_FIRST_TILE, oldschool_cga_8x8_TILE_COUNT,
-                    oldschool_cga_8x8_tiles);
+  set_bkg_1bpp_data(PORTFOLIO_FIRST_TILE, portfolio_TILE_COUNT,
+                    portfolio_tiles);
 }
 
 void print_char_at(char ch, uint8_t x, uint8_t y, term_sgr_mode_t mode) {
-  set_bkg_tile_xy(x, y, OLDSCHOOL_CGA_8x8_FIRST_TILE + (uint8_t)ch);
+  set_bkg_tile_xy(x, y, PORTFOLIO_FIRST_TILE + (uint8_t)ch);
 
   if (DEVICE_SUPPORTS_COLOR) {
     if (mode == TERM_SGR_INVERSE) {

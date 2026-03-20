@@ -337,7 +337,6 @@ void term_handle_link_byte(term_state_t* term, unsigned char cur_char) {
       }
       return;
     case 0x5B:  // CSI (7-bit)
-    case 0x9B:  // CSI (8-bit)
       if (term->esc && !term->csi) {
         // Enable CSI
         term->esc = 0;
@@ -374,7 +373,7 @@ void term_handle_link_byte(term_state_t* term, unsigned char cur_char) {
   }
 
   // Skip unprintable characters
-  if (cur_char < ' ' || cur_char > (unsigned char)0x7F) {
+  if (cur_char < ' ' || cur_char == 0x7F || cur_char == 0xFF) {
     return;
   }
 
