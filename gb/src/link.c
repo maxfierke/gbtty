@@ -1,18 +1,20 @@
 #include "link.h"
 
-unsigned char link_rx_buffer[LINK_RX_BUFFER_SIZE];
+volatile unsigned char link_rx_buffer[LINK_RX_BUFFER_SIZE];
 volatile uint8_t link_rx_buffer_head = 0;
 volatile uint8_t link_rx_buffer_tail = 0;
 
-unsigned char link_tx_buffer[LINK_TX_BUFFER_SIZE];
+volatile unsigned char link_tx_buffer[LINK_TX_BUFFER_SIZE];
 volatile uint8_t link_tx_buffer_head = 0;
 volatile uint8_t link_tx_buffer_tail = 0;
 
 void link_port_write(unsigned char data) {
-  uint8_t next_head = (link_tx_buffer_head + 1) % LINK_TX_BUFFER_SIZE;
-  if (next_head != link_tx_buffer_tail) {
-    link_tx_buffer[link_tx_buffer_head] = data;
-    link_tx_buffer_head = next_head;
+  CRITICAL {
+    uint8_t next_head = (link_tx_buffer_head + 1) % LINK_TX_BUFFER_SIZE;
+    if (next_head != link_tx_buffer_tail) {
+      link_tx_buffer[link_tx_buffer_head] = data;
+      link_tx_buffer_head = next_head;
+    }
   }
 }
 

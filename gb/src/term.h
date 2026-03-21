@@ -26,7 +26,7 @@ typedef struct term_cell {
   term_sgr_mode_t mode;
 } term_cell_t;
 
-typedef struct {
+typedef struct term_csi_state {
   uint8_t enabled;
   uint8_t current_arg;
   uint8_t args[TERM_CSI_ARG_LEN];
@@ -35,7 +35,7 @@ typedef struct {
   unsigned char response[TERM_CSI_RESPONSE_LEN];
 } term_csi_state_t;
 
-typedef struct {
+typedef struct term_state {
   uint8_t started;
   uint8_t x;
   uint8_t y;

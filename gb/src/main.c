@@ -72,12 +72,15 @@ void draw_term_state(term_state_t* term) {
     print_str_at(line_buffer, 1, 16, TERM_SGR_INVERSE);
   }
 
+  uint8_t buffer_head = link_rx_buffer_head;
+
   sprintf(
       line_buffer, "%hx %hx %hx %hx",
-      (uint8_t)link_rx_buffer[(link_rx_buffer_head - 3) % LINK_RX_BUFFER_SIZE],
-      (uint8_t)link_rx_buffer[(link_rx_buffer_head - 2) % LINK_RX_BUFFER_SIZE],
-      (uint8_t)link_rx_buffer[(link_rx_buffer_head - 1) % LINK_RX_BUFFER_SIZE],
-      (uint8_t)link_rx_buffer[link_rx_buffer_head]);
+      (uint8_t)link_rx_buffer[(uint8_t)(buffer_head - 4) % LINK_RX_BUFFER_SIZE],
+      (uint8_t)link_rx_buffer[(uint8_t)(buffer_head - 3) % LINK_RX_BUFFER_SIZE],
+      (uint8_t)link_rx_buffer[(uint8_t)(buffer_head - 2) % LINK_RX_BUFFER_SIZE],
+      (uint8_t)
+          link_rx_buffer[(uint8_t)(buffer_head - 1) % LINK_RX_BUFFER_SIZE]);
   print_str_at(line_buffer, 8, 16, TERM_SGR_INVERSE);
 }
 

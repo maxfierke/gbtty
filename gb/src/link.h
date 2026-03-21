@@ -19,12 +19,12 @@
 #endif
 
 #define LINK_RX_BUFFER_SIZE 128
-extern unsigned char link_rx_buffer[LINK_RX_BUFFER_SIZE];
+extern volatile unsigned char link_rx_buffer[LINK_RX_BUFFER_SIZE];
 extern volatile uint8_t link_rx_buffer_head;
 extern volatile uint8_t link_rx_buffer_tail;
 
 #define LINK_TX_BUFFER_SIZE 32
-extern unsigned char link_tx_buffer[LINK_TX_BUFFER_SIZE];
+extern volatile unsigned char link_tx_buffer[LINK_TX_BUFFER_SIZE];
 extern volatile uint8_t link_tx_buffer_head;
 extern volatile uint8_t link_tx_buffer_tail;
 
