@@ -60,7 +60,7 @@ void print_str_at(char str[], uint8_t x, uint8_t y, term_sgr_mode_t mode) {
   }
 }
 
-void draw_term_state(term_state_t* term) {
+void draw_term_state(term_t* term) {
   if (!term->esc && !term->csi) {
     print_str_at("   ", 1, 16, TERM_SGR_DEFAULT);
   } else if (term->esc && !term->csi) {
@@ -85,7 +85,7 @@ void draw_term_state(term_state_t* term) {
 }
 
 // Main Loop
-void draw(term_state_t* term) {
+void draw(term_t* term) {
   if (!term->started) {
     print_str_at("GBTTY", 8, 1, TERM_SGR_DEFAULT);
     print_str_at("START to begin", 3, 12, TERM_SGR_INVERSE);
@@ -109,7 +109,7 @@ void draw(term_state_t* term) {
   draw_term_state(term);
 }
 
-void update(term_state_t* term) {
+void update(term_t* term) {
   if (!term->started) {
     if (KEY_RELEASED(J_START)) {
       term->started = 1;
@@ -163,7 +163,7 @@ void main(void) {
 
   setup_fonts();
 
-  term_state_t term = {0};
+  term_t term = {0};
   term_init(&term);
 
   DISPLAY_ON;

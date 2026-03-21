@@ -2,7 +2,7 @@
 
 uint8_t term_gfx_mode_inverse = 0;
 
-void term_init(term_state_t* term) {
+void term_init(term_t* term) {
   term->x = TERM_MIN_X;
   term->y = TERM_MIN_Y;
 
@@ -11,19 +11,19 @@ void term_init(term_state_t* term) {
   term->csi_state = malloc(sizeof(term_csi_state_t));
 }
 
-inline void term_clear_cell(term_state_t* term, uint8_t x, uint8_t y) {
+inline void term_clear_cell(term_t* term, uint8_t x, uint8_t y) {
   term->cells[y][x].ch = '\0';
   term->cells[y][x].mode = TERM_SGR_DEFAULT;
 }
 
-void term_clear_screen(term_state_t* term) {
+void term_clear_screen(term_t* term) {
   term->x = TERM_MIN_X;
   term->y = TERM_MIN_Y;
 
   memset(term->cells, 0, sizeof(term_cell_t) * TERM_ROWS * TERM_COLS);
 }
 
-static void term_advance_line(term_state_t* term) {
+static void term_advance_line(term_t* term) {
   term->x = TERM_MIN_X;
   term->y++;
   if (term->y >= TERM_MAX_Y) {
@@ -31,31 +31,31 @@ static void term_advance_line(term_state_t* term) {
   }
 }
 
-inline void term_cursor_up(term_state_t* term) {
+inline void term_cursor_up(term_t* term) {
   if (term->y > TERM_MIN_Y) {
     term->y--;
   }
 }
 
-inline void term_cursor_down(term_state_t* term) {
+inline void term_cursor_down(term_t* term) {
   if (term->y < TERM_MAX_Y) {
     term->y++;
   }
 }
 
-inline void term_cursor_forward(term_state_t* term) {
+inline void term_cursor_forward(term_t* term) {
   if (term->x < TERM_MAX_X) {
     term->x++;
   }
 }
 
-inline void term_cursor_backward(term_state_t* term) {
+inline void term_cursor_backward(term_t* term) {
   if (term->x > TERM_MIN_X) {
     term->x--;
   }
 }
 
-static void term_consume_csi_arg_buffer(term_state_t* term) {
+static void term_consume_csi_arg_buffer(term_t* term) {
   unsigned char arg_buf[4] = {0x0, 0x0, 0x0, 0x0};  // 3+1 NULL
   uint8_t arg_buf_idx = 0;
   for (uint8_t i = 0; i < TERM_CSI_ARG_BUFFER_LEN; i++) {
@@ -87,19 +87,19 @@ static void term_consume_csi_arg_buffer(term_state_t* term) {
   }
 }
 
-static void term_reset_csi(term_state_t* term) {
+static void term_reset_csi(term_t* term) {
   memset(term->csi_state, 0, sizeof(term_csi_state_t));
   term->csi = 0;
 }
 
-static void term_queue_csi_response(term_state_t* term) {
+static void term_queue_csi_response(term_t* term) {
   for (uint8_t i = 0; i < TERM_CSI_RESPONSE_LEN; i++) {
     if (!term->csi_state->response[i]) break;
     link_port_write(term->csi_state->response[i]);
   }
 }
 
-static void term_handle_csi_char(term_state_t* term, unsigned char cur_char) {
+static void term_handle_csi_char(term_t* term, unsigned char cur_char) {
   switch (cur_char) {
     case 'c':
       term_consume_csi_arg_buffer(term);
@@ -319,7 +319,7 @@ static void term_handle_csi_char(term_state_t* term, unsigned char cur_char) {
   }
 }
 
-void term_handle_link_byte(term_state_t* term, unsigned char cur_char) {
+void term_handle_link_byte(term_t* term, unsigned char cur_char) {
   if (term->csi) {
     term_handle_csi_char(term, cur_char);
     return;

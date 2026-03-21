@@ -35,7 +35,7 @@ typedef struct term_csi_state {
   unsigned char response[TERM_CSI_RESPONSE_LEN];
 } term_csi_state_t;
 
-typedef struct term_state {
+typedef struct term {
   uint8_t started;
   uint8_t x;
   uint8_t y;
@@ -43,18 +43,18 @@ typedef struct term_state {
   uint8_t csi;
   term_csi_state_t* csi_state;
   term_cell_t cells[TERM_ROWS][TERM_COLS];
-} term_state_t;
+} term_t;
 
 extern uint8_t term_gfx_mode_inverse;
 
-void term_init(term_state_t* term);
-inline void term_clear_cell(term_state_t* term, uint8_t x, uint8_t y);
-void term_clear_screen(term_state_t* term);
-inline void term_cursor_up(term_state_t* term);
-inline void term_cursor_down(term_state_t* term);
-inline void term_cursor_forward(term_state_t* term);
-inline void term_cursor_backward(term_state_t* term);
-void term_handle_link_byte(term_state_t* term, unsigned char cur_char);
+void term_init(term_t* term);
+inline void term_clear_cell(term_t* term, uint8_t x, uint8_t y);
+void term_clear_screen(term_t* term);
+inline void term_cursor_up(term_t* term);
+inline void term_cursor_down(term_t* term);
+inline void term_cursor_forward(term_t* term);
+inline void term_cursor_backward(term_t* term);
+void term_handle_link_byte(term_t* term, unsigned char cur_char);
 
 // TODO: Remove this dependency
 extern void link_port_write(unsigned char data);
